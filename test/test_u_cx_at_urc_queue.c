@@ -305,6 +305,7 @@ void test_wrappedHeadFilledToReadPosition_rejectsOverwrite(void)
     uint16_t alignedStorage[32];
     uCxAtUrcQueue_t queue;
     char tailLine[49];
+    uint8_t *pPayload;
 
     memset(tailLine, 'T', sizeof(tailLine) - 1);
     tailLine[sizeof(tailLine) - 1] = 0;
@@ -320,6 +321,8 @@ void test_wrappedHeadFilledToReadPosition_rejectsOverwrite(void)
     uCxAtUrcQueueDequeueEnd(&queue, pEntry);
 
     TEST_ASSERT_TRUE(uCxAtUrcQueueEnqueueBegin(&queue, "head", 5));
+    TEST_ASSERT_EQUAL(0,
+                      uCxAtUrcQueueEnqueueGetPayloadPtr(&queue, &pPayload));
     uCxAtUrcQueueEnqueueEnd(&queue, 0);
     TEST_ASSERT_EQUAL(queue.readPos, queue.writePos);
     TEST_ASSERT_FALSE(uCxAtUrcQueueEnqueueBegin(&queue, "x", 1));
