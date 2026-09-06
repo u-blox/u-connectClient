@@ -1,0 +1,50 @@
+name: 'Native Port Unit Tests'
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: POSIX
+            task: test.posix.run
+            build-directory: posix
+          - name: no-OS
+            task: test.no-os.run
+            build-directory: no-os
+          - name: STM32 host
+            task: test.stm32.unit
+            build-directory: stm32-unit
+
+    name: ${{ matrix.name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install test tools
+        run: pip install gcovr==8.6 invoke
+
+      - name: Run tests
+        run: invoke ${{ matrix.task }}
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.build-directory }}-coverage
+          path: build/${{ matrix.build-directory }}/coverage.html
+          if-no-files-found: ignore
