@@ -25,9 +25,9 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <unistd.h>
 #include <termios.h>
-#include <sys/ioctl.h>
 
 #include "u_port_uart.h"
 
@@ -191,6 +191,9 @@ int32_t uPortUartWrite(uPortUartHandle_t handle,
             }
             return -1;
         }
+        if (written == 0) {
+            return -1;
+        }
         totalWritten += (size_t)written;
     }
 
@@ -208,22 +211,32 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
 
     uPortUartHandle *pHandle = (uPortUartHandle *)handle;
 
-    // For zero timeout, check if data is available without blocking
-    if (timeoutMs == 0) {
-        int available = 0;
-        ioctl(pHandle->fd, FIONREAD, &available);
-        if (available == 0) {
-            return 0;
-        }
-    }
-
     // If pData is NULL, just return 0 (test case)
     if (pData == NULL) {
         return 0;
     }
 
-    // Read data (blocking read handled by termios VTIME setting)
-    ssize_t bytesRead = read(pHandle->fd, pData, length);
+    struct pollfd pollFd = {
+        .fd = pHandle->fd,
+        .events = POLLIN
+    };
+    int pollResult;
+    do {
+        pollResult = poll(&pollFd, 1, timeoutMs);
+    } while ((pollResult < 0) && (errno == EINTR));
+
+    if (pollResult == 0) {
+        return 0;
+    }
+    if ((pollResult < 0) || ((pollFd.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)) {
+        return -1;
+    }
+
+    ssize_t bytesRead;
+    do {
+        bytesRead = read(pHandle->fd, pData, length);
+    } while ((bytesRead < 0) && (errno == EINTR));
+
     if (bytesRead < 0) {
         return -1;
     }
