@@ -801,6 +801,9 @@ int32_t uCxAtClientCmdEnd(uCxAtClient_t *pClient)
 static int32_t handleRx(uCxAtClient_t *pClient, int32_t timeoutMs)
 {
     int32_t ret = 0;
+#if U_CX_USE_URC_QUEUE == 1
+    bool processQueuedUrcs;
+#endif
     U_CX_MUTEX_LOCK(pClient->cmdMutex);
 
     if (pClient->opened && !pClient->executingCmd) {
@@ -810,10 +813,13 @@ static int32_t handleRx(uCxAtClient_t *pClient, int32_t timeoutMs)
         }
     }
 
+#if U_CX_USE_URC_QUEUE == 1
+    processQueuedUrcs = !pClient->isBinaryRx;
+#endif
     U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
 
 #if U_CX_USE_URC_QUEUE == 1
-    if (!pClient->isBinaryRx) {
+    if (processQueuedUrcs) {
         processUrcs(pClient);
     }
 #endif
