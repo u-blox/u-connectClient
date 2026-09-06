@@ -23,6 +23,7 @@
 #include "u_port.h"
 #include "u_cx_at_client.h"
 #include "u_port_uart.h"
+#include "uart_fault_driver.h"
 
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
@@ -37,6 +38,10 @@
 #define TEST_DATA_SIZE          (U_RINGBUFFER_SIZE * 2)
 #define MODEM_THREAD_STACK_SIZE 4096
 #define MODEM_THREAD_PRIORITY   5
+
+#ifndef STRESS_ITERATIONS
+# define STRESS_ITERATIONS      100
+#endif
 
 #define TIMESTAMP_CREATE()      int64_t __timestamp = k_uptime_get();
 
@@ -100,8 +105,10 @@ static void urcCallback(uCxAtClient_t *pClient, void *pTag, char *pLine,
     gUrcCapture.line[gUrcCapture.lineLength] = '\0';
     gUrcCapture.binaryDataLength = MIN(binaryDataLength,
                                        sizeof(gUrcCapture.binaryData));
-    memcpy(gUrcCapture.binaryData, pBinaryData,
-           gUrcCapture.binaryDataLength);
+    if (gUrcCapture.binaryDataLength > 0) {
+        memcpy(gUrcCapture.binaryData, pBinaryData,
+               gUrcCapture.binaryDataLength);
+    }
     k_sem_give(&gUrcReceived);
 }
 
@@ -350,6 +357,31 @@ ZTEST_F(u_connect_client_port, test_reopen_without_flow_control)
     zassert_equal(config.flow_ctrl, UART_CFG_FLOW_CTRL_NONE);
 }
 
+ZTEST_F(u_connect_client_port, test_open_recovers_from_device_failures)
+{
+    static const char *const failingDevices[] = {
+        UART_FAULT_NOT_READY_NAME,
+        UART_FAULT_CONFIGURE_NAME,
+        UART_FAULT_CALLBACK_NAME,
+    };
+
+    uCxAtClientClose(&fixture->client);
+
+    for (size_t i = 0; i < ARRAY_SIZE(failingDevices); i++) {
+        fixture->config.pUartDevName = failingDevices[i];
+        zassert_equal(uCxAtClientOpen(&fixture->client, 115200, true),
+                      U_CX_ERROR_IO, "device %s opened", failingDevices[i]);
+
+        fixture->config.pUartDevName = fixture->pDev->name;
+        zassert_equal(uCxAtClientOpen(&fixture->client, 115200, true), 0,
+                      "reopen failed after device %s", failingDevices[i]);
+        uCxAtClientClose(&fixture->client);
+    }
+
+    fixture->config.pUartDevName = fixture->pDev->name;
+    zassert_equal(uCxAtClientOpen(&fixture->client, 115200, true), 0);
+}
+
 ZTEST_F(u_connect_client_port, test_os_port_and_rx_worker)
 {
     uPortInit();
@@ -490,6 +522,125 @@ ZTEST_F(u_connect_client_port, test_command_recovers_after_timeout)
     zassert_equal(uart_emul_get_tx_data(fixture->pDev, txData, sizeof(txData)),
                   sizeof(txData));
     zassert_mem_equal__(txData, "AT\rAT\r", sizeof(txData));
+}
+
+ZTEST_F(u_connect_client_port, test_repeated_command_urc_close_reopen)
+{
+    static const uint8_t commandUrc[] = "\r\n+MYURC:CMD\r\n\r\n";
+    static const uint8_t responseStart[] = "O";
+    static const uint8_t responseEnd[] = "K\r\n";
+    static const uint8_t asyncUrcStart[] = "\r\n+MY";
+    static const uint8_t asyncUrcEnd[] = "URC:ASYNC\r\n";
+    static const uint8_t binaryUrcLine[] = "\r\n+MYURC:BINARY\x01";
+    static const uint8_t binaryLengthHigh[] = {0x00};
+    static const uint8_t binaryLengthLowAndData[] = {0x04, 0x00, 0x11};
+    static const uint8_t binaryDataEnd[] = {0x22, 0xff};
+    static const uint8_t expectedBinaryData[] = {0x00, 0x11, 0x22, 0xff};
+    static const uint8_t partialBinaryUrc[] = "\r\n+MYURC:PARTIAL\x01";
+    static const uint8_t partialBinaryHeader[] = {0x00, 0x04};
+    static const uint8_t partialBinaryData[] = {0xaa};
+
+    uCxAtClientSetUrcCallback(&fixture->client, urcCallback, NULL);
+    gDisableRxWorker = false;
+
+    for (size_t i = 0; i < STRESS_ITERATIONS; i++) {
+        struct modem_response commandResponse = {
+            .pDev = fixture->pDev,
+            .pChunks = {commandUrc, responseStart, responseEnd},
+            .chunkLengths = {sizeof(commandUrc) - 1,
+                             sizeof(responseStart) - 1,
+                             sizeof(responseEnd) - 1},
+            .chunkCount = 3
+        };
+
+        k_sem_reset(&gUrcReceived);
+        startModemResponse(&commandResponse);
+        zassert_equal(uCxAtClientExecSimpleCmd(&fixture->client, "AT"), 0,
+                      "command failed at iteration %zu", i);
+        waitForModemResponse();
+        zassert_equal(k_sem_take(&gUrcReceived, K_SECONDS(1)), 0,
+                      "command URC missing at iteration %zu", i);
+        zassert_equal(strcmp(gUrcCapture.line, "+MYURC:CMD"), 0,
+                      "wrong command URC at iteration %zu", i);
+
+        uint8_t txData[3];
+        zassert_equal(uart_emul_get_tx_data(fixture->pDev, txData,
+                                            sizeof(txData)), sizeof(txData),
+                      "TX missing at iteration %zu", i);
+        zassert_mem_equal__(txData, "AT\r", sizeof(txData),
+                            "wrong TX at iteration %zu", i);
+
+        uCxAtClientClose(&fixture->client);
+        zassert_equal(uCxAtClientOpen(&fixture->client, 115200, true), 0,
+                      "reopen failed at iteration %zu", i);
+
+        bool sendBinaryUrc = (i % 5) == 0;
+        struct modem_response asyncUrc = {.pDev = fixture->pDev};
+        if (sendBinaryUrc) {
+            asyncUrc.pChunks[0] = binaryUrcLine;
+            asyncUrc.pChunks[1] = binaryLengthHigh;
+            asyncUrc.pChunks[2] = binaryLengthLowAndData;
+            asyncUrc.pChunks[3] = binaryDataEnd;
+            asyncUrc.chunkLengths[0] = sizeof(binaryUrcLine) - 1;
+            asyncUrc.chunkLengths[1] = sizeof(binaryLengthHigh);
+            asyncUrc.chunkLengths[2] = sizeof(binaryLengthLowAndData);
+            asyncUrc.chunkLengths[3] = sizeof(binaryDataEnd);
+            asyncUrc.chunkCount = 4;
+        } else {
+            asyncUrc.pChunks[0] = asyncUrcStart;
+            asyncUrc.pChunks[1] = asyncUrcEnd;
+            asyncUrc.chunkLengths[0] = sizeof(asyncUrcStart) - 1;
+            asyncUrc.chunkLengths[1] = sizeof(asyncUrcEnd) - 1;
+            asyncUrc.chunkCount = 2;
+        }
+
+        k_sem_reset(&gUrcReceived);
+        startModemResponse(&asyncUrc);
+        waitForModemResponse();
+        zassert_equal(k_sem_take(&gUrcReceived, K_SECONDS(1)), 0,
+                      "async URC missing at iteration %zu", i);
+        if (sendBinaryUrc) {
+            zassert_equal(strcmp(gUrcCapture.line, "+MYURC:BINARY"), 0,
+                          "wrong binary URC at iteration %zu", i);
+            zassert_equal(gUrcCapture.binaryDataLength,
+                          sizeof(expectedBinaryData));
+            zassert_mem_equal__(gUrcCapture.binaryData, expectedBinaryData,
+                                sizeof(expectedBinaryData),
+                                "wrong binary data at iteration %zu", i);
+        } else {
+            zassert_equal(strcmp(gUrcCapture.line, "+MYURC:ASYNC"), 0,
+                          "wrong async URC at iteration %zu", i);
+            zassert_equal(gUrcCapture.binaryDataLength, 0);
+        }
+
+        if ((i % 10) == 0) {
+            struct modem_response interruptedUrc = {
+                .pDev = fixture->pDev,
+                .pChunks = {partialBinaryUrc, partialBinaryHeader,
+                            partialBinaryData},
+                .chunkLengths = {sizeof(partialBinaryUrc) - 1,
+                                 sizeof(partialBinaryHeader),
+                                 sizeof(partialBinaryData)},
+                .chunkCount = 3
+            };
+
+            startModemResponse(&interruptedUrc);
+            waitForModemResponse();
+            k_sleep(K_MSEC(20));
+            zassert_true(fixture->client.isBinaryRx,
+                         "binary RX stopped at iteration %zu", i);
+            zassert_not_null(fixture->client.urcQueue.pEnqueueEntry,
+                             "URC enqueue missing at iteration %zu", i);
+
+            uCxAtClientClose(&fixture->client);
+            zassert_false(fixture->client.isBinaryRx);
+            zassert_is_null(fixture->client.urcQueue.pEnqueueEntry);
+            zassert_equal(uCxAtClientOpen(&fixture->client, 115200, true), 0,
+                          "partial URC reopen failed at iteration %zu", i);
+        }
+    }
+
+    gDisableRxWorker = true;
 }
 
 ZTEST_SUITE(u_connect_client_port, NULL, u_connect_client_port_setup, u_connect_client_port_before, u_connect_client_port_after, NULL);

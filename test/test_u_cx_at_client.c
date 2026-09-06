@@ -739,6 +739,25 @@ void test_uCxAtClientHandleRx_withStringUrc_expectUrcCallback(void)
     TEST_ASSERT_EQUAL(1, callbackCount);
 }
 
+void test_uCxAtClientOpen_afterPartialBinaryHeader_expectParserReset(void)
+{
+    uint8_t partialBinary[] = {0x01};
+    char response[] = "\r\nOK\r\n";
+
+    gPRxDataPtr = partialBinary;
+    gRxDataLen = sizeof(partialBinary);
+    uCxAtClientHandleRx(&gClient);
+    TEST_ASSERT_TRUE(gClient.isBinaryRx);
+
+    uCxAtClientClose(&gClient);
+    TEST_ASSERT_EQUAL(0, uCxAtClientOpen(&gClient, 115200, true));
+    TEST_ASSERT_FALSE(gClient.isBinaryRx);
+
+    gPRxDataPtr = (uint8_t *)response;
+    gRxDataLen = strlen(response);
+    TEST_ASSERT_EQUAL(0, uCxAtClientExecSimpleCmd(&gClient, "AT"));
+}
+
 void test_uCxAtClientHandleRx_withFragmentedBinUrc_expectUrcCallback(void)
 {
     char strData[] = { "\r\n" TEST_URC };

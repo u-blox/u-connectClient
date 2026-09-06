@@ -127,6 +127,21 @@ void test_abortedQueueing_expectEmptyQueue(void)
     TEST_ASSERT_EQUAL(NULL, pEntry);
 }
 
+void test_incompleteQueueing_expectHiddenUntilCompletedOrAborted(void)
+{
+    char myString[] = "FOO123";
+
+    TEST_ASSERT_TRUE(uCxAtUrcQueueEnqueueBegin(&gQueue, myString,
+                                               strlen(myString)));
+    TEST_ASSERT_NULL(uCxAtUrcQueueDequeueBegin(&gQueue));
+    uCxAtUrcQueueEnqueueAbort(&gQueue);
+
+    TEST_ASSERT_TRUE(uCxAtUrcQueueEnqueueBegin(&gQueue, myString,
+                                               strlen(myString)));
+    uCxAtUrcQueueEnqueueEnd(&gQueue, 0);
+    TEST_ASSERT_NOT_NULL(uCxAtUrcQueueDequeueBegin(&gQueue));
+}
+
 void test_uCxAtUrcQueueEnqueueBegin_withFullQueue_expectFailure(void)
 {
     char myString[sizeof(gBuffer) / 2];

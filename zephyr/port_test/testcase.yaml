@@ -3,3 +3,10 @@ common:
 tests:
   u_connect_client.port:
     platform_allow: qemu_x86
+  u_connect_client.port_stress:
+    platform_allow: qemu_x86
+    tags:
+      - stress
+    timeout: 300
+    slow: true
+    extra_args: EXTRA_CFLAGS=-DSTRESS_ITERATIONS=1000
