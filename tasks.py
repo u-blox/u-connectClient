@@ -93,6 +93,22 @@ def posix(c):
 
 
 @task
+def no_os(c):
+    """Run no-OS port tests and generate coverage."""
+    print("Running no-OS port tests...")
+    build_dir = os.path.join(REPO_ROOT, "build", "no-os")
+    test_dir = os.path.join(REPO_ROOT, "test", "no_os")
+
+    c.run(f"cmake -S {test_dir} -B {build_dir} "
+          "-DENABLE_COVERAGE=ON -DENABLE_SANITIZERS=ON")
+    c.run(f"cmake --build {build_dir} --parallel")
+    c.run(f"ctest --test-dir {build_dir} --output-on-failure")
+    c.run(f"gcovr {build_dir} --root {REPO_ROOT} --object-directory {build_dir} "
+          "--filter 'ports/os/u_port_no_os\\.c' "
+          f"--txt --html-details {os.path.join(build_dir, 'coverage.html')}")
+
+
+@task
 def stm32_unit(c):
     """Run host-based STM32 port tests and generate coverage."""
     print("Running STM32 port unit tests...")
@@ -146,6 +162,13 @@ def clean_posix(c):
 
 
 @task
+def clean_no_os(c):
+    """Clean no-OS test artifacts."""
+    print("Cleaning no-OS test artifacts...")
+    c.run(f"rm -rf {os.path.join(REPO_ROOT, 'build', 'no-os')}")
+
+
+@task
 def clean_stm32_unit(c):
     """Clean host-based STM32 test artifacts."""
     print("Cleaning STM32 port unit test artifacts...")
@@ -176,6 +199,11 @@ posix_ns = Collection('posix')
 posix_ns.add_task(posix, 'run')
 posix_ns.add_task(clean_posix, 'clean')
 
+# No-OS sub-collection under test
+no_os_ns = Collection('no-os')
+no_os_ns.add_task(no_os, 'run')
+no_os_ns.add_task(clean_no_os, 'clean')
+
 # STM32 sub-collection under test
 stm32_ns = Collection('stm32')
 stm32_ns.add_task(stm32_unit, 'unit')
@@ -187,6 +215,7 @@ test_ns = Collection('test')
 test_ns.add_collection(ceedling_ns)
 test_ns.add_collection(zephyr_ns)
 test_ns.add_collection(posix_ns)
+test_ns.add_collection(no_os_ns)
 test_ns.add_collection(stm32_ns)
 
 # Create main namespace

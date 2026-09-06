@@ -158,6 +158,9 @@ invoke test.ceedling.run
 # Run native Linux/POSIX port tests with coverage
 invoke test.posix.run
 
+# Run bare-metal/no-OS port tests with coverage
+invoke test.no-os.run
+
 # Run host-based STM32 UART and FreeRTOS port tests with coverage
 invoke test.stm32.unit
 
@@ -170,6 +173,7 @@ invoke test.zephyr.run
 # Clean test artifacts
 invoke test.ceedling.clean
 invoke test.posix.clean
+invoke test.no-os.clean
 invoke test.stm32.clean
 invoke test.zephyr.clean
 invoke test.zephyr.clean-west  # Remove west workspace
