@@ -50,7 +50,7 @@
 
 typedef struct {
     uCxAtClient_t *pClient;
-    TaskHandle_t rxTaskHandle;
+    volatile TaskHandle_t rxTaskHandle;
     volatile bool terminateRxTask;
 } uPortRxContext_t;
 
@@ -75,6 +75,7 @@ static void rxTask(void *pArg)
     }
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX task terminated");
+    pCtx->rxTaskHandle = NULL;
     vTaskDelete(NULL);
 }
 
@@ -117,6 +118,12 @@ int32_t uPortMutexTryLock(SemaphoreHandle_t mutex, uint32_t timeoutMs)
 
 void uPortBgRxTaskCreate(uCxAtClient_t *pClient)
 {
+    TaskHandle_t taskHandle = NULL;
+
+    if (gRxContext.rxTaskHandle != NULL) {
+        return;
+    }
+
     memset(&gRxContext, 0, sizeof(gRxContext));
     gRxContext.pClient = pClient;
     gRxContext.terminateRxTask = false;
@@ -127,8 +134,9 @@ void uPortBgRxTaskCreate(uCxAtClient_t *pClient)
         U_PORT_FREERTOS_RX_TASK_STACK_SIZE,
         &gRxContext,
         U_PORT_FREERTOS_RX_TASK_PRIORITY,
-        &gRxContext.rxTaskHandle
+        &taskHandle
     );
+    gRxContext.rxTaskHandle = taskHandle;
 }
 
 void uPortBgRxTaskDestroy(uCxAtClient_t *pClient)
@@ -136,8 +144,8 @@ void uPortBgRxTaskDestroy(uCxAtClient_t *pClient)
     (void)pClient;
     gRxContext.terminateRxTask = true;
 
-    // Wait for task to terminate (it will delete itself)
-    while (eTaskGetState(gRxContext.rxTaskHandle) != eDeleted) {
+    // Wait for the task to release its handle before deleting itself.
+    while (gRxContext.rxTaskHandle != NULL) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
