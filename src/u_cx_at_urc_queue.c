@@ -94,10 +94,10 @@ bool uCxAtUrcQueueEnqueueBegin(uCxAtUrcQueue_t *pUrcQueue, const char *pUrcLine,
         ret = true;
     } else {
         // Not enough space available
-        U_CX_MUTEX_UNLOCK(pUrcQueue->queueMutex);
         ret = false;
     }
 
+    U_CX_MUTEX_UNLOCK(pUrcQueue->queueMutex);
     return ret;
 }
 
@@ -112,6 +112,7 @@ uint16_t uCxAtUrcQueueEnqueueGetPayloadPtr(uCxAtUrcQueue_t *pUrcQueue, uint8_t *
 
 void uCxAtUrcQueueEnqueueEnd(uCxAtUrcQueue_t *pUrcQueue, uint16_t payloadSize)
 {
+    U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
     U_CX_AT_PORT_ASSERT(pUrcQueue->pEnqueueEntry);
     U_CX_AT_PORT_ASSERT(getUnusedBuf(pUrcQueue) >= payloadSize);
 
@@ -124,6 +125,7 @@ void uCxAtUrcQueueEnqueueEnd(uCxAtUrcQueue_t *pUrcQueue, uint16_t payloadSize)
 
 void uCxAtUrcQueueEnqueueAbort(uCxAtUrcQueue_t *pUrcQueue)
 {
+    U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
     U_CX_AT_PORT_ASSERT(pUrcQueue->pEnqueueEntry);
 
     uint8_t *pEntry = (uint8_t *)pUrcQueue->pEnqueueEntry;
@@ -140,7 +142,8 @@ uUrcEntry_t *uCxAtUrcQueueDequeueBegin(uCxAtUrcQueue_t *pUrcQueue)
         U_CX_AT_PORT_ASSERT(pUrcQueue->pDequeueEntry == NULL);
 
         U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
-        if (pUrcQueue->bufferPos > 0) {
+        if ((pUrcQueue->bufferPos > 0) &&
+            (pUrcQueue->pEnqueueEntry == NULL)) {
             pEntry = (uUrcEntry_t *)&pUrcQueue->pBuffer[0];
         }
         U_CX_MUTEX_UNLOCK(pUrcQueue->queueMutex);
