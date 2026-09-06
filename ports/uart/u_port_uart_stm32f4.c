@@ -68,7 +68,7 @@ static uPortUartHandle *gpUartHandle = NULL;
  * -------------------------------------------------------------- */
 
 static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle);
-static void startRxInterrupt(uPortUartHandle *pHandle);
+static bool startRxInterrupt(uPortUartHandle *pHandle);
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
@@ -86,9 +86,9 @@ static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle)
     }
 }
 
-static void startRxInterrupt(uPortUartHandle *pHandle)
+static bool startRxInterrupt(uPortUartHandle *pHandle)
 {
-    HAL_UART_Receive_IT(&pHandle->huart, &pHandle->rxByte, 1);
+    return HAL_UART_Receive_IT(&pHandle->huart, &pHandle->rxByte, 1) == HAL_OK;
 }
 
 /* ----------------------------------------------------------------
@@ -146,7 +146,10 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     gpUartHandle = pHandle;
 
     // Start receiving
-    startRxInterrupt(pHandle);
+    if (!startRxInterrupt(pHandle)) {
+        uPortUartClose((uPortUartHandle_t)pHandle);
+        return NULL;
+    }
 
     return (uPortUartHandle_t)pHandle;
 }
@@ -274,7 +277,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         // If buffer full, drop the byte (could add overflow handling here)
 
         // Restart reception
-        startRxInterrupt(gpUartHandle);
+        (void)startRxInterrupt(gpUartHandle);
     }
 }
 
