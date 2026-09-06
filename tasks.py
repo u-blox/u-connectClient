@@ -77,6 +77,22 @@ def zephyr(c, verbose=False):
 
 
 @task
+def posix(c):
+    """Run native POSIX port tests and generate coverage."""
+    print("Running POSIX port tests...")
+    build_dir = os.path.join(REPO_ROOT, "build", "posix")
+    test_dir = os.path.join(REPO_ROOT, "test", "posix")
+
+    c.run(f"cmake -S {test_dir} -B {build_dir} "
+          "-DENABLE_COVERAGE=ON -DENABLE_SANITIZERS=ON")
+    c.run(f"cmake --build {build_dir} --parallel")
+    c.run(f"ctest --test-dir {build_dir} --output-on-failure")
+    c.run(f"gcovr {build_dir} --root {REPO_ROOT} --object-directory {build_dir} "
+          "--filter 'ports/(os/u_port_posix|uart/u_port_uart_linux)\\.c' "
+          f"--txt --html-details {os.path.join(build_dir, 'coverage.html')}")
+
+
+@task
 def clean_ceedling(c):
     """Clean Ceedling build artifacts."""
     print("Cleaning Ceedling artifacts...")
@@ -90,6 +106,13 @@ def clean_zephyr(c):
     c.run(f"rm -rf {os.path.join(WEST_WORKSPACE, 'twister-out')} {os.path.join(WEST_WORKSPACE, 'twister-out.*')}", pty=True, warn=True)
     c.run(f"rm -rf {os.path.join(REPO_ROOT, 'zephyr/http_example/build')}", pty=True, warn=True)
     c.run(f"rm -rf {os.path.join(REPO_ROOT, 'zephyr/build')}", pty=True, warn=True)
+
+
+@task
+def clean_posix(c):
+    """Clean native POSIX test artifacts."""
+    print("Cleaning POSIX test artifacts...")
+    c.run(f"rm -rf {os.path.join(REPO_ROOT, 'build', 'posix')}")
 
 
 @task
@@ -111,10 +134,16 @@ zephyr_ns.add_task(zephyr, 'run')
 zephyr_ns.add_task(clean_zephyr, 'clean')
 zephyr_ns.add_task(clean_west, 'clean-west')
 
+# POSIX sub-collection under test
+posix_ns = Collection('posix')
+posix_ns.add_task(posix, 'run')
+posix_ns.add_task(clean_posix, 'clean')
+
 # Test namespace with sub-collections
 test_ns = Collection('test')
 test_ns.add_collection(ceedling_ns)
 test_ns.add_collection(zephyr_ns)
+test_ns.add_collection(posix_ns)
 
 # Create main namespace
 ns = Collection()
