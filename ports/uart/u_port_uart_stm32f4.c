@@ -131,6 +131,7 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     pHandle->huart.Init.OverSampling = UART_OVERSAMPLING_16;
 
     if (HAL_UART_Init(&pHandle->huart) != HAL_OK) {
+        U_PORT_UART_CLK_DISABLE();
         free(pHandle);
         return NULL;
     }
