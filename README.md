@@ -164,6 +164,9 @@ invoke test.no-os.run
 # Run host-based STM32 UART and FreeRTOS port tests with coverage
 invoke test.stm32.unit
 
+# Windows port tests (native Windows or portable fake Win32 API)
+invoke test.windows.run
+
 # Run STM32 HTTP and socket integration tests in Renode
 invoke test.stm32.renode
 
@@ -175,6 +178,7 @@ invoke test.ceedling.clean
 invoke test.posix.clean
 invoke test.no-os.clean
 invoke test.stm32.clean
+invoke test.windows.clean
 invoke test.zephyr.clean
 invoke test.zephyr.clean-west  # Remove west workspace
 ```

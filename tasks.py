@@ -124,6 +124,18 @@ def stm32_unit(c):
           f"--txt --html-details {os.path.join(build_dir, 'coverage.html')}")
 
 
+@task
+def windows(c):
+    """Run host-based Windows port tests."""
+    print("Running Windows port tests...")
+    build_dir = os.path.join(REPO_ROOT, "build", "windows")
+    test_dir = os.path.join(REPO_ROOT, "test", "windows")
+
+    c.run(f"cmake -S {test_dir} -B {build_dir}")
+    c.run(f"cmake --build {build_dir} --parallel")
+    c.run(f"ctest --test-dir {build_dir} --output-on-failure")
+
+
 @task(help={
     'timeout': 'Timeout in seconds for each emulated example',
 })
@@ -176,6 +188,16 @@ def clean_stm32_unit(c):
 
 
 @task
+def clean_windows(c):
+    """Clean host-based Windows test artifacts."""
+    build_dir = os.path.join(REPO_ROOT, "build", "windows")
+    if os.name == "nt":
+        c.run(f'if exist "{build_dir}" rmdir /s /q "{build_dir}"')
+    else:
+        c.run(f"rm -rf {build_dir}")
+
+
+@task
 def clean_west(c):
     """Clean west workspace."""
     print(f"Cleaning west workspace ({WEST_WORKSPACE})...")
@@ -210,6 +232,11 @@ stm32_ns.add_task(stm32_unit, 'unit')
 stm32_ns.add_task(stm32_renode, 'renode')
 stm32_ns.add_task(clean_stm32_unit, 'clean')
 
+# Windows sub-collection under test
+windows_ns = Collection('windows')
+windows_ns.add_task(windows, 'run')
+windows_ns.add_task(clean_windows, 'clean')
+
 # Test namespace with sub-collections
 test_ns = Collection('test')
 test_ns.add_collection(ceedling_ns)
@@ -217,6 +244,7 @@ test_ns.add_collection(zephyr_ns)
 test_ns.add_collection(posix_ns)
 test_ns.add_collection(no_os_ns)
 test_ns.add_collection(stm32_ns)
+test_ns.add_collection(windows_ns)
 
 # Create main namespace
 ns = Collection()

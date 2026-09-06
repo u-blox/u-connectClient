@@ -48,3 +48,26 @@ jobs:
           name: ${{ matrix.build-directory }}-coverage
           path: build/${{ matrix.build-directory }}/coverage.html
           if-no-files-found: ignore
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Invoke
+        run: pip install invoke
+
+      - name: Run tests
+        run: invoke test.windows.run
