@@ -79,6 +79,23 @@ static int32_t gNextInstance = 0;
  * STATIC FUNCTIONS
  * -------------------------------------------------------------- */
 
+static void resetReceiveState(uCxAtClient_t *pClient)
+{
+#if U_CX_USE_URC_QUEUE == 1
+    if (pClient->urcQueue.pEnqueueEntry != NULL) {
+        uCxAtUrcQueueEnqueueAbort(&pClient->urcQueue);
+    }
+#endif
+    pClient->rxBufferPos = 0;
+    pClient->urcBufferPos = 0;
+    pClient->pExpectedRsp = NULL;
+    pClient->pExpectedRspLen = 0;
+    pClient->pRspParams = NULL;
+    pClient->isBinaryRx = false;
+    memset(&pClient->binaryRx, 0, sizeof(pClient->binaryRx));
+    memset(&pClient->rspBinaryBuf, 0, sizeof(pClient->rspBinaryBuf));
+}
+
 // Helper function for setting up the RX binary transfer buffer
 static void setupBinaryRxBuffer(uCxAtClient_t *pClient, uCxAtBinaryState_t state,
                                 uint8_t *pBuffer, uint16_t bufferSize, uint16_t remainingBytes)
@@ -508,23 +525,28 @@ void uCxAtClientDeinit(uCxAtClient_t *pClient)
 int32_t uCxAtClientOpen(uCxAtClient_t *pClient, int32_t baudRate, bool flowControl)
 {
     const struct uCxAtClientConfig *pConfig = pClient->pConfig;
+    int32_t ret = 0;
+
+    U_CX_MUTEX_LOCK(pClient->cmdMutex);
 
     if (pClient->opened) {
         // Already opened
-        return U_CX_ERROR_ALREADY_EXISTS;
+        ret = U_CX_ERROR_ALREADY_EXISTS;
+    } else if (pConfig->pUartDevName == NULL) {
+        ret = U_CX_ERROR_INVALID_PARAMETER;
+    } else {
+        pClient->uartHandle = uPortUartOpen(pConfig->pUartDevName, baudRate,
+                                            flowControl);
+        if (pClient->uartHandle == NULL) {
+            ret = U_CX_ERROR_IO;
+        } else {
+            resetReceiveState(pClient);
+            pClient->opened = true;
+        }
     }
 
-    if (pConfig->pUartDevName == NULL) {
-        return U_CX_ERROR_INVALID_PARAMETER;
-    }
-
-    pClient->uartHandle = uPortUartOpen(pConfig->pUartDevName, baudRate, flowControl);
-    if (pClient->uartHandle == NULL) {
-        return U_CX_ERROR_IO;
-    }
-
-    pClient->opened = true;
-    return 0;
+    U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
+    return ret;
 }
 
 void uCxAtClientClose(uCxAtClient_t *pClient)
@@ -537,6 +559,7 @@ void uCxAtClientClose(uCxAtClient_t *pClient)
     }
 
     pClient->opened = false;
+    resetReceiveState(pClient);
     if (pClient->uartHandle != NULL) {
         uPortUartClose(pClient->uartHandle);
         pClient->uartHandle = NULL;
