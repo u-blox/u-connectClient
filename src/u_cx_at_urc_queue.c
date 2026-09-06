@@ -138,7 +138,7 @@ bool uCxAtUrcQueueEnqueueBegin(uCxAtUrcQueue_t *pUrcQueue, const char *pUrcLine,
         pEntry->payloadSize = 0;
         pUrcQueue->writePos += entrySize;
         pUrcQueue->usedBytes += entrySize;
-        size_t segmentEnd = pUrcQueue->writePos < pUrcQueue->readPos ?
+        size_t segmentEnd = pUrcQueue->isWrapped ?
                             pUrcQueue->readPos : pUrcQueue->bufferLen;
         pUrcQueue->enqueueCapacity = segmentEnd - pUrcQueue->writePos;
         pUrcQueue->pEnqueueEntry = pEntry;
