@@ -26,6 +26,9 @@ static uint32_t gTaskPriority;
 static uint32_t gTaskCreateCalls;
 static const char *gpTaskName;
 static bool gStateCalledWithNull;
+static pthread_mutex_t gNotifyMutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t gNotifyCondition = PTHREAD_COND_INITIALIZER;
+static uint32_t gNotificationCount;
 
 static void *taskEntry(void *pParameter)
 {
@@ -50,6 +53,9 @@ void fakeRtosReset(void)
     gTaskCreateCalls = 0;
     gpTaskName = NULL;
     gStateCalledWithNull = false;
+    pthread_mutex_lock(&gNotifyMutex);
+    gNotificationCount = 0;
+    pthread_mutex_unlock(&gNotifyMutex);
 }
 
 void fakeRtosSetTickCount(TickType_t ticks)
@@ -172,6 +178,40 @@ eTaskState eTaskGetState(TaskHandle_t taskHandle)
         return eDeleted;
     }
     return (eTaskState)atomic_load(&taskHandle->state);
+}
+
+uint32_t ulTaskNotifyTake(BaseType_t clearOnExit, TickType_t ticksToWait)
+{
+    (void)ticksToWait;
+    pthread_mutex_lock(&gNotifyMutex);
+    while (gNotificationCount == 0) {
+        pthread_cond_wait(&gNotifyCondition, &gNotifyMutex);
+    }
+    uint32_t notificationCount = gNotificationCount;
+    if (clearOnExit == pdTRUE) {
+        gNotificationCount = 0;
+    } else {
+        gNotificationCount--;
+    }
+    pthread_mutex_unlock(&gNotifyMutex);
+    return notificationCount;
+}
+
+BaseType_t xTaskNotifyGive(TaskHandle_t taskHandle)
+{
+    (void)taskHandle;
+    pthread_mutex_lock(&gNotifyMutex);
+    gNotificationCount++;
+    pthread_cond_signal(&gNotifyCondition);
+    pthread_mutex_unlock(&gNotifyMutex);
+    return pdPASS;
+}
+
+void vTaskNotifyGiveFromISR(TaskHandle_t taskHandle,
+                            BaseType_t *pHigherPriorityTaskWoken)
+{
+    xTaskNotifyGive(taskHandle);
+    *pHigherPriorityTaskWoken = pdTRUE;
 }
 
 BaseType_t xSemaphoreTake(SemaphoreHandle_t semaphore, TickType_t ticks)

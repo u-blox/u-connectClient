@@ -28,6 +28,13 @@ typedef struct {
     int32_t result;
 } blockingRead_t;
 
+static uint32_t gRxSignals;
+
+void uPortUartRxSignalFromIsr(void)
+{
+    gRxSignals++;
+}
+
 static void sleepMs(int32_t milliseconds)
 {
     struct timespec delay = {
@@ -40,6 +47,7 @@ static void sleepMs(int32_t milliseconds)
 static bool testOpenConfiguration(void)
 {
     fakeHalReset();
+    gRxSignals = 0;
     uPortUartHandle_t handle = uPortUartOpen(NULL, 921600, false);
     CHECK(handle != NULL);
     CHECK(gFakeHal.initCalls == 1);
@@ -132,6 +140,7 @@ static bool testWrite(void)
 
 static bool testFragmentedBinaryRead(void)
 {
+    gRxSignals = 0;
     static const uint8_t payload[] = {0x00, 0x0d, 0x0a, 0x7f, 0x80, 0xff};
     uint8_t received[sizeof(payload)] = {0};
 
@@ -146,6 +155,7 @@ static bool testFragmentedBinaryRead(void)
     for (size_t index = 0; index < 2; index++) {
         fakeHalInjectRxByte(payload[index]);
     }
+    CHECK(gRxSignals == 2);
     CHECK(uPortUartRead(handle, received, sizeof(received), 0) == 2);
     for (size_t index = 2; index < sizeof(payload); index++) {
         fakeHalInjectRxByte(payload[index]);

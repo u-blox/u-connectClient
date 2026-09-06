@@ -14,5 +14,6 @@ typedef uint32_t TickType_t;
 #define portTICK_PERIOD_MS 1U
 #define configMAX_PRIORITIES 10U
 #define pdMS_TO_TICKS(milliseconds) ((TickType_t)(milliseconds))
+#define portYIELD_FROM_ISR(taskWoken) ((void)(taskWoken))
 
 #endif

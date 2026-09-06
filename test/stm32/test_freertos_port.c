@@ -31,7 +31,7 @@ static void hostSleepMs(int32_t milliseconds)
     nanosleep(&delay, NULL);
 }
 
-int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
+int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient)
 {
     (void)pClient;
     atomic_fetch_add(&gRxCalls, 1);
@@ -88,8 +88,17 @@ static bool testBackgroundRxTask(void)
         hostSleepMs(1);
     }
     CHECK(atomic_load(&gRxCalls) > 0);
-    CHECK(fakeRtosGetDelayCalls() > 0);
-    CHECK(fakeRtosGetLastDelay() == pdMS_TO_TICKS(10));
+    int callsWhileIdle = atomic_load(&gRxCalls);
+    hostSleepMs(3);
+    CHECK(atomic_load(&gRxCalls) == callsWhileIdle);
+
+    uPortUartRxSignalFromIsr();
+    for (int32_t attempt = 0;
+         (attempt < 100) && (atomic_load(&gRxCalls) == callsWhileIdle);
+         attempt++) {
+        hostSleepMs(1);
+    }
+    CHECK(atomic_load(&gRxCalls) == callsWhileIdle + 1);
 
     uPortBgRxTaskDestroy(&client);
     fakeRtosJoinTask();

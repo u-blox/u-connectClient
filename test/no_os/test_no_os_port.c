@@ -94,6 +94,7 @@ static bool testMutexAndRxStubs(void)
     U_CX_MUTEX_DELETE(mutex);
 
     uPortBgRxTaskCreate(NULL);
+    uPortUartRxSignalFromIsr();
     uPortBgRxTaskDestroy(NULL);
     return true;
 }

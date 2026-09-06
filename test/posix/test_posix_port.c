@@ -258,7 +258,7 @@ static bool testReadTimeouts(void)
     return true;
 }
 
-int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
+int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient)
 {
     if (!pClient->opened) {
         return -1;
@@ -267,8 +267,12 @@ int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
         atomic_fetch_sub(&gRxFailures, 1);
         return -1;
     }
-    atomic_fetch_add(&gRxCalls, 1);
-    return 0;
+    uint8_t byte;
+    int32_t result = uPortUartRead(pClient->uartHandle, &byte, 1, 0);
+    if (result > 0) {
+        atomic_fetch_add(&gRxCalls, 1);
+    }
+    return result < 0 ? result : 0;
 }
 
 static bool testPosixOsPrimitives(void)
@@ -290,36 +294,38 @@ static bool testPosixOsPrimitives(void)
     return true;
 }
 
-static bool testBackgroundRxCloseAndReopen(void)
+static bool testBackgroundRxWakeAndStop(void)
 {
     uCxAtClient_t client = {0};
+    int masterFd;
+    char slaveName[128];
+    uint8_t byte = 0x55;
     atomic_store(&gRxCalls, 0);
     atomic_store(&gRxFailures, 0);
 
-    client.opened = false;
+    CHECK(createPty(&masterFd, slaveName, sizeof(slaveName)));
+    client.uartHandle = uPortUartOpen(slaveName, 115200, false);
+    CHECK(client.uartHandle != NULL);
+    client.opened = true;
     uPortBgRxTaskCreate(&client);
     CHECK(sleepMs(30));
     CHECK(atomic_load(&gRxCalls) == 0);
 
-    client.opened = true;
-    CHECK(sleepMs(40));
-    CHECK(atomic_load(&gRxCalls) > 0);
-
-    client.opened = false;
+    CHECK(write(masterFd, &byte, sizeof(byte)) == (ssize_t)sizeof(byte));
     CHECK(sleepMs(30));
-    int callsWhileClosed = atomic_load(&gRxCalls);
+    CHECK(atomic_load(&gRxCalls) == 1);
+
     CHECK(sleepMs(30));
-    CHECK(atomic_load(&gRxCalls) == callsWhileClosed);
+    CHECK(atomic_load(&gRxCalls) == 1);
 
-    client.opened = true;
-    CHECK(sleepMs(40));
-    CHECK(atomic_load(&gRxCalls) > callsWhileClosed);
-
-    int callsBeforeError = atomic_load(&gRxCalls);
     atomic_store(&gRxFailures, 1);
-    CHECK(sleepMs(150));
-    CHECK(atomic_load(&gRxCalls) > callsBeforeError);
+    CHECK(write(masterFd, &byte, sizeof(byte)) == (ssize_t)sizeof(byte));
+    CHECK(sleepMs(30));
+    CHECK(atomic_load(&gRxFailures) == 0);
+
     uPortBgRxTaskDestroy(&client);
+    uPortUartClose(client.uartHandle);
+    CHECK(close(masterFd) == 0);
     return true;
 }
 
@@ -350,7 +356,7 @@ int main(void)
         {"repeated open and close", testRepeatedOpenClose},
         {"read timeouts", testReadTimeouts},
         {"OS primitives", testPosixOsPrimitives},
-        {"background RX close and reopen", testBackgroundRxCloseAndReopen},
+        {"background RX wake and stop", testBackgroundRxWakeAndStop},
         {"background RX create failure", testBackgroundRxCreateFailure}
     };
 

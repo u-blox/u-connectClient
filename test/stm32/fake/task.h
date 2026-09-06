@@ -25,5 +25,9 @@ TickType_t xTaskGetTickCount(void);
 void vTaskDelay(TickType_t ticks);
 void vTaskDelete(TaskHandle_t taskHandle);
 eTaskState eTaskGetState(TaskHandle_t taskHandle);
+uint32_t ulTaskNotifyTake(BaseType_t clearOnExit, TickType_t ticksToWait);
+BaseType_t xTaskNotifyGive(TaskHandle_t taskHandle);
+void vTaskNotifyGiveFromISR(TaskHandle_t taskHandle,
+                            BaseType_t *pHigherPriorityTaskWoken);
 
 #endif
