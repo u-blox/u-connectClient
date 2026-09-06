@@ -21,6 +21,7 @@
 #include "stddef.h"
 #include "stdint.h"
 #include "stdbool.h"
+#include "limits.h"
 #include "string.h"
 
 #include "u_cx_log.h"
@@ -32,8 +33,8 @@
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
 
-#define U_URC_ENTRY_SIZE(ENTRY) \
-    ((size_t)(ENTRY->strLineLen + 1 + ENTRY->payloadSize))
+#define U_URC_ALIGN_SIZE(SIZE) \
+    (((SIZE) + sizeof(uint16_t) - 1) & ~(sizeof(uint16_t) - 1))
 
 /* ----------------------------------------------------------------
  * TYPES
@@ -51,9 +52,44 @@
  * STATIC FUNCTIONS
  * -------------------------------------------------------------- */
 
-static inline size_t getUnusedBuf(uCxAtUrcQueue_t *pUrcQueue)
+static size_t getEnqueueOffset(uCxAtUrcQueue_t *pUrcQueue,
+                               size_t requiredSize)
 {
-    return pUrcQueue->bufferLen - pUrcQueue->bufferPos;
+    if (requiredSize > pUrcQueue->bufferLen - pUrcQueue->usedBytes) {
+        return SIZE_MAX;
+    }
+
+    if (pUrcQueue->usedBytes == 0) {
+        pUrcQueue->readPos = pUrcQueue->startPos;
+        pUrcQueue->writePos = pUrcQueue->startPos;
+        pUrcQueue->wrapPos = pUrcQueue->bufferLen;
+        pUrcQueue->isWrapped = false;
+    }
+
+    if (pUrcQueue->isWrapped) {
+        return requiredSize <= pUrcQueue->readPos - pUrcQueue->writePos ?
+               pUrcQueue->writePos : SIZE_MAX;
+    }
+
+    size_t tailSpace = pUrcQueue->bufferLen - pUrcQueue->writePos;
+    size_t headSpace = pUrcQueue->readPos - pUrcQueue->startPos;
+    if ((headSpace > tailSpace) && (requiredSize <= headSpace)) {
+        pUrcQueue->wrapPos = pUrcQueue->writePos;
+        pUrcQueue->isWrapped = true;
+        pUrcQueue->writePos = pUrcQueue->startPos;
+        return pUrcQueue->startPos;
+    }
+    if (requiredSize <= tailSpace) {
+        return pUrcQueue->writePos;
+    }
+    if (requiredSize <= headSpace) {
+        pUrcQueue->wrapPos = pUrcQueue->writePos;
+        pUrcQueue->isWrapped = true;
+        pUrcQueue->writePos = pUrcQueue->startPos;
+        return pUrcQueue->startPos;
+    }
+
+    return SIZE_MAX;
 }
 
 /* ----------------------------------------------------------------
@@ -67,6 +103,11 @@ void uCxAtUrcQueueInit(uCxAtUrcQueue_t *pUrcQueue, void *pBuffer, size_t bufferL
     U_CX_MUTEX_CREATE(pUrcQueue->dequeueMutex);
     pUrcQueue->pBuffer = pBuffer;
     pUrcQueue->bufferLen = bufferLen;
+    pUrcQueue->startPos = (size_t)((uintptr_t)pBuffer &
+                                   (sizeof(uint16_t) - 1));
+    pUrcQueue->readPos = pUrcQueue->startPos;
+    pUrcQueue->writePos = pUrcQueue->startPos;
+    pUrcQueue->wrapPos = bufferLen;
 }
 
 void uCxAtUrcQueueDeInit(uCxAtUrcQueue_t *pUrcQueue)
@@ -82,14 +123,24 @@ bool uCxAtUrcQueueEnqueueBegin(uCxAtUrcQueue_t *pUrcQueue, const char *pUrcLine,
     U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
     U_CX_AT_PORT_ASSERT(pUrcQueue->pEnqueueEntry == NULL);
 
-    int32_t availableDataSpace = (int32_t)(getUnusedBuf(pUrcQueue) - sizeof(uUrcEntry_t));
-    if (availableDataSpace >= (int32_t)urcLineLen + 1) {
-        uUrcEntry_t *pEntry = (uUrcEntry_t *)&pUrcQueue->pBuffer[pUrcQueue->bufferPos];
+    size_t entryOffset = SIZE_MAX;
+    size_t entrySize = 0;
+    if ((urcLineLen <= UINT16_MAX) &&
+        (urcLineLen <= SIZE_MAX - sizeof(uUrcEntry_t) - 1)) {
+        entrySize = sizeof(uUrcEntry_t) + urcLineLen + 1;
+        entryOffset = getEnqueueOffset(pUrcQueue, entrySize);
+    }
+    if (entryOffset != SIZE_MAX) {
+        uUrcEntry_t *pEntry = (uUrcEntry_t *)&pUrcQueue->pBuffer[entryOffset];
         memcpy(&pEntry->data[0], pUrcLine, urcLineLen);
         pEntry->data[urcLineLen] = 0; // Add null term
         pEntry->strLineLen = (uint16_t)urcLineLen;
         pEntry->payloadSize = 0;
-        pUrcQueue->bufferPos += sizeof(uUrcEntry_t) + urcLineLen + 1;
+        pUrcQueue->writePos += entrySize;
+        pUrcQueue->usedBytes += entrySize;
+        size_t segmentEnd = pUrcQueue->writePos < pUrcQueue->readPos ?
+                            pUrcQueue->readPos : pUrcQueue->bufferLen;
+        pUrcQueue->enqueueCapacity = segmentEnd - pUrcQueue->writePos;
         pUrcQueue->pEnqueueEntry = pEntry;
         ret = true;
     } else {
@@ -107,18 +158,29 @@ uint16_t uCxAtUrcQueueEnqueueGetPayloadPtr(uCxAtUrcQueue_t *pUrcQueue, uint8_t *
 
     uUrcEntry_t *pEntry = pUrcQueue->pEnqueueEntry;
     *ppPayload = &pEntry->data[pEntry->strLineLen + 1];
-    return (uint16_t)getUnusedBuf(pUrcQueue);
+    size_t payloadCapacity = pUrcQueue->enqueueCapacity;
+    return payloadCapacity > UINT16_MAX ?
+           UINT16_MAX : (uint16_t)payloadCapacity;
 }
 
 void uCxAtUrcQueueEnqueueEnd(uCxAtUrcQueue_t *pUrcQueue, uint16_t payloadSize)
 {
     U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
     U_CX_AT_PORT_ASSERT(pUrcQueue->pEnqueueEntry);
-    U_CX_AT_PORT_ASSERT(getUnusedBuf(pUrcQueue) >= payloadSize);
 
     uUrcEntry_t *pEntry = pUrcQueue->pEnqueueEntry;
+    size_t entryPrefixSize = sizeof(uUrcEntry_t) + pEntry->strLineLen + 1;
+    size_t entrySize = U_URC_ALIGN_SIZE(entryPrefixSize + payloadSize);
+    size_t additionalSize = entrySize - entryPrefixSize;
+    if (additionalSize > pUrcQueue->enqueueCapacity) {
+        additionalSize = payloadSize;
+    }
+    U_CX_AT_PORT_ASSERT(pUrcQueue->enqueueCapacity >= additionalSize);
+
     pEntry->payloadSize = payloadSize;
-    pUrcQueue->bufferPos += payloadSize;
+    pUrcQueue->writePos += additionalSize;
+    pUrcQueue->usedBytes += additionalSize;
+    pUrcQueue->enqueueCapacity = 0;
     pUrcQueue->pEnqueueEntry = NULL;
     U_CX_MUTEX_UNLOCK(pUrcQueue->queueMutex);
 }
@@ -128,8 +190,19 @@ void uCxAtUrcQueueEnqueueAbort(uCxAtUrcQueue_t *pUrcQueue)
     U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
     U_CX_AT_PORT_ASSERT(pUrcQueue->pEnqueueEntry);
 
-    uint8_t *pEntry = (uint8_t *)pUrcQueue->pEnqueueEntry;
-    pUrcQueue->bufferPos = (size_t)(pEntry - pUrcQueue->pBuffer);
+    uUrcEntry_t *pEntry = pUrcQueue->pEnqueueEntry;
+    size_t entryOffset = (size_t)((uint8_t *)pEntry - pUrcQueue->pBuffer);
+    size_t entrySize = sizeof(uUrcEntry_t) + pEntry->strLineLen + 1;
+    pUrcQueue->usedBytes -= entrySize;
+    if ((entryOffset == pUrcQueue->startPos) &&
+        pUrcQueue->isWrapped) {
+        pUrcQueue->writePos = pUrcQueue->wrapPos;
+        pUrcQueue->wrapPos = pUrcQueue->bufferLen;
+        pUrcQueue->isWrapped = false;
+    } else {
+        pUrcQueue->writePos = entryOffset;
+    }
+    pUrcQueue->enqueueCapacity = 0;
     pUrcQueue->pEnqueueEntry = NULL;
     U_CX_MUTEX_UNLOCK(pUrcQueue->queueMutex);
 }
@@ -142,9 +215,9 @@ uUrcEntry_t *uCxAtUrcQueueDequeueBegin(uCxAtUrcQueue_t *pUrcQueue)
         U_CX_AT_PORT_ASSERT(pUrcQueue->pDequeueEntry == NULL);
 
         U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
-        if ((pUrcQueue->bufferPos > 0) &&
+        if ((pUrcQueue->usedBytes > 0) &&
             (pUrcQueue->pEnqueueEntry == NULL)) {
-            pEntry = (uUrcEntry_t *)&pUrcQueue->pBuffer[0];
+            pEntry = (uUrcEntry_t *)&pUrcQueue->pBuffer[pUrcQueue->readPos];
         }
         U_CX_MUTEX_UNLOCK(pUrcQueue->queueMutex);
 
@@ -160,21 +233,32 @@ uUrcEntry_t *uCxAtUrcQueueDequeueBegin(uCxAtUrcQueue_t *pUrcQueue)
 
 void uCxAtUrcQueueDequeueEnd(uCxAtUrcQueue_t *pUrcQueue, uUrcEntry_t *pEntry)
 {
-    int32_t remainingData;
     U_CX_AT_PORT_ASSERT(pUrcQueue->pDequeueEntry != NULL);
     U_CX_AT_PORT_ASSERT(pUrcQueue->pDequeueEntry == pEntry);
 
     U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
-    size_t totEntrySize = sizeof(uUrcEntry_t) + U_URC_ENTRY_SIZE(pEntry);
-    remainingData = (int32_t)pUrcQueue->bufferPos - (int32_t)totEntrySize;
-    if (remainingData > 0) {
-        // Move the remaining data to start of buffer
-        // TODO: Replace with ring buffer to improve performance
-        memmove(pUrcQueue->pBuffer, &pUrcQueue->pBuffer[totEntrySize], (size_t)remainingData);
-        pUrcQueue->bufferPos -= totEntrySize;
-    } else {
-        // This was the only entry so no need to move anything
-        pUrcQueue->bufferPos = 0;
+    size_t entryOffset = (size_t)((uint8_t *)pEntry - pUrcQueue->pBuffer);
+    size_t rawEntrySize = sizeof(uUrcEntry_t) + pEntry->strLineLen + 1 +
+                          pEntry->payloadSize;
+    size_t totEntrySize = U_URC_ALIGN_SIZE(rawEntrySize);
+    size_t segmentEnd = pUrcQueue->isWrapped ?
+                        pUrcQueue->wrapPos : pUrcQueue->bufferLen;
+    if (entryOffset + totEntrySize > segmentEnd) {
+        totEntrySize = rawEntrySize;
+    }
+    pUrcQueue->readPos += totEntrySize;
+    pUrcQueue->usedBytes -= totEntrySize;
+    if (pUrcQueue->isWrapped &&
+        (pUrcQueue->readPos == pUrcQueue->wrapPos)) {
+        pUrcQueue->readPos = pUrcQueue->startPos;
+        pUrcQueue->wrapPos = pUrcQueue->bufferLen;
+        pUrcQueue->isWrapped = false;
+    }
+    if (pUrcQueue->usedBytes == 0) {
+        pUrcQueue->readPos = pUrcQueue->startPos;
+        pUrcQueue->writePos = pUrcQueue->startPos;
+        pUrcQueue->wrapPos = pUrcQueue->bufferLen;
+        pUrcQueue->isWrapped = false;
     }
     U_CX_MUTEX_UNLOCK(pUrcQueue->queueMutex);
 
