@@ -238,12 +238,13 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
         return 0;
     }
 
-    // Wait for data if blocking
-    if (timeoutMs > 0 && available == 0) {
+    // Wait for data if blocking or using a positive timeout
+    if ((timeoutMs != 0) && (available == 0)) {
         uint32_t startTime = HAL_GetTick();
         while (available == 0) {
             available = getRxBufferAvailable(pHandle);
-            if ((HAL_GetTick() - startTime) >= (uint32_t)timeoutMs) {
+            if ((timeoutMs > 0) &&
+                ((HAL_GetTick() - startTime) >= (uint32_t)timeoutMs)) {
                 return 0;  // Timeout
             }
         }
