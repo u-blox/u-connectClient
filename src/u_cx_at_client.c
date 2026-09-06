@@ -282,7 +282,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
     }
 }
 
-static int32_t handleBinaryRx(uCxAtClient_t *pClient)
+static int32_t handleBinaryRx(uCxAtClient_t *pClient, int32_t timeoutMs)
 {
     int32_t ret = AT_PARSER_NOP;
 
@@ -294,7 +294,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
         size_t readLen = sizeof(pBinRx->lengthBuf) - pBinRx->rxHeaderCount;
         readStatus = uPortUartRead(pClient->uartHandle,
                                    &pBinRx->lengthBuf[pBinRx->rxHeaderCount], readLen,
-                                   pClient->pConfig->timeoutMs);
+                                   timeoutMs);
         CHECK_READ_ERROR(pClient, readStatus);
         if (readStatus > 0) {
             pBinRx->rxHeaderCount += (uint8_t)readStatus;
@@ -320,7 +320,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
             size_t readLen = U_MIN(remainingBuf, pBinRx->remainingDataBytes);
             readStatus = uPortUartRead(pClient->uartHandle,
                                        &pBinRx->pBuffer[pBinRx->bufferPos], readLen,
-                                       pClient->pConfig->timeoutMs);
+                                       timeoutMs);
             CHECK_READ_ERROR(pClient, readStatus);
             if (readStatus > 0) {
                 pBinRx->bufferPos += (uint16_t)readStatus;
@@ -331,7 +331,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
             size_t readLen = U_MIN(sizeof(buf), pBinRx->remainingDataBytes);
             readStatus = uPortUartRead(pClient->uartHandle,
                                        &buf[0], readLen,
-                                       pClient->pConfig->timeoutMs);
+                                       timeoutMs);
             CHECK_READ_ERROR(pClient, readStatus);
         }
 
@@ -380,7 +380,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
     return ret;
 }
 
-static int32_t handleRxData(uCxAtClient_t *pClient)
+static int32_t handleRxData(uCxAtClient_t *pClient, int32_t timeoutMs)
 {
     int32_t ret = AT_PARSER_NOP;
 
@@ -392,7 +392,7 @@ static int32_t handleRxData(uCxAtClient_t *pClient)
             do {
                 char ch;
                 readStatus = uPortUartRead(pClient->uartHandle, &ch, 1,
-                                           pClient->pConfig->timeoutMs);
+                                           timeoutMs);
                 CHECK_READ_ERROR(pClient, readStatus);
                 if (readStatus != 1) {
                     break;
@@ -400,7 +400,7 @@ static int32_t handleRxData(uCxAtClient_t *pClient)
                 ret = parseIncomingChar(pClient, ch);
             } while (ret == AT_PARSER_NOP);
         } else {
-            ret = handleBinaryRx(pClient);
+            ret = handleBinaryRx(pClient, timeoutMs);
         }
 
         if (ret == AT_PARSER_START_BINARY) {
@@ -451,7 +451,7 @@ static void cmdBeginF(uCxAtClient_t *pClient, const char *pCmd, const char *pPar
 static int32_t cmdEnd(uCxAtClient_t *pClient)
 {
     while (pClient->status == NO_STATUS) {
-        handleRxData(pClient);
+        handleRxData(pClient, pClient->pConfig->timeoutMs);
 
         int32_t now = U_CX_PORT_GET_TIME_MS();
         if ((now - pClient->cmdStartTime) > pClient->cmdTimeout) {
@@ -506,15 +506,13 @@ void uCxAtClientInit(const uCxAtClientConfig_t *pConfig, uCxAtClient_t *pClient)
     uCxAtUrcQueueInit(&pClient->urcQueue, pConfig->pUrcBuffer, pConfig->urcBufferLen);
 #endif
     U_CX_MUTEX_CREATE(pClient->cmdMutex);
-
-    // Start background RX task (if implemented by port layer)
-    uPortBgRxTaskCreate(pClient);
 }
 
 void uCxAtClientDeinit(uCxAtClient_t *pClient)
 {
-    // Stop background RX task (if implemented by port layer)
-    uPortBgRxTaskDestroy(pClient);
+    if (pClient->opened) {
+        uCxAtClientClose(pClient);
+    }
 
 #if U_CX_USE_URC_QUEUE == 1
     uCxAtUrcQueueDeInit(&pClient->urcQueue);
@@ -546,17 +544,22 @@ int32_t uCxAtClientOpen(uCxAtClient_t *pClient, int32_t baudRate, bool flowContr
     }
 
     U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
+    if (ret == 0) {
+        uPortBgRxTaskCreate(pClient);
+    }
     return ret;
 }
 
 void uCxAtClientClose(uCxAtClient_t *pClient)
 {
-    U_CX_MUTEX_LOCK(pClient->cmdMutex);
-
     if (!pClient->opened) {
-        U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
         return;
     }
+
+    // Stop RX before releasing its UART handle.
+    uPortBgRxTaskDestroy(pClient);
+
+    U_CX_MUTEX_LOCK(pClient->cmdMutex);
 
     pClient->opened = false;
     resetReceiveState(pClient);
@@ -758,7 +761,7 @@ char *uCxAtClientCmdGetRspParamLine(uCxAtClient_t *pClient, const char *pExpecte
     }
 
     while (pClient->status == NO_STATUS) {
-        if (handleRxData(pClient) == AT_PARSER_GOT_RSP) {
+        if (handleRxData(pClient, pClient->pConfig->timeoutMs) == AT_PARSER_GOT_RSP) {
             pRet = pClient->pRspParams;
             break;
         }
@@ -795,13 +798,13 @@ int32_t uCxAtClientCmdEnd(uCxAtClient_t *pClient)
     return cmdEnd(pClient);
 }
 
-int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
+static int32_t handleRx(uCxAtClient_t *pClient, int32_t timeoutMs)
 {
     int32_t ret = 0;
     U_CX_MUTEX_LOCK(pClient->cmdMutex);
 
     if (pClient->opened && !pClient->executingCmd) {
-        int32_t parserRet = handleRxData(pClient);
+        int32_t parserRet = handleRxData(pClient, timeoutMs);
         if (parserRet == AT_PARSER_ERROR && pClient->status == U_CX_ERROR_IO) {
             ret = pClient->lastIoError;
         }
@@ -816,6 +819,16 @@ int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
 #endif
 
     return ret;
+}
+
+int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
+{
+    return handleRx(pClient, pClient->pConfig->timeoutMs);
+}
+
+int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient)
+{
+    return handleRx(pClient, 0);
 }
 
 int32_t uCxAtClientGetLastIoError(uCxAtClient_t *pClient)

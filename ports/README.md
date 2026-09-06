@@ -36,13 +36,14 @@ See also: [STM32F4 port](extra/stm32f4/README.md) for embedded ARM Cortex-M4 wit
 
 The port layer optionally implements `uPortBgRxTaskCreate()` and `uPortBgRxTaskDestroy()`:
 
-* **POSIX port**: Creates a pthread that polls `uCxAtClientHandleRx()` every 10ms
-* **Windows port**: Creates a Windows thread that polls `uCxAtClientHandleRx()` every 10ms
-* **Zephyr port**: Uses work queue that is triggered by UART ISR
-* **FreeRTOS port**: Creates a FreeRTOS task that polls `uCxAtClientHandleRx()` every 10ms
+* **POSIX port**: Blocks a pthread on UART readiness and wakes it for shutdown
+* **Windows port**: Blocks a thread on COM port receive events
+* **Zephyr port**: Uses a work queue that is triggered by the UART ISR
+* **FreeRTOS port**: Blocks a task on notifications from the UART ISR
 * **No-OS port**: Stub implementation - user must call `uCxAtClientHandleRx()` manually in their main loop
 
-These functions are called automatically by `uCxAtClientInit()` and `uCxAtClientDeinit()`.
+These functions are called automatically by `uCxAtClientOpen()` and
+`uCxAtClientClose()`.
 
 ## Using an Example Port
 

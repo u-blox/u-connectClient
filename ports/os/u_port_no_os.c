@@ -114,3 +114,8 @@ void uPortBgRxTaskDestroy(uCxAtClient_t *pClient)
     (void)pClient;
     // Nothing to do
 }
+
+void uPortUartRxSignalFromIsr(void)
+{
+    // No scheduler to wake. The application calls uCxAtClientHandleRx().
+}

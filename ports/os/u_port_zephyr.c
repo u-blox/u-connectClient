@@ -28,6 +28,8 @@
 #include "u_port.h"
 #include "u_cx_at_client.h"
 
+extern int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient);
+
 /* ----------------------------------------------------------------
  * TYPES
  * -------------------------------------------------------------- */
@@ -42,6 +44,7 @@ typedef struct {
  * -------------------------------------------------------------- */
 
 static uPortRxContext_t gRxContext;
+static bool gRxWorkerReady;
 bool gDisableRxWorker = false;  // Used during test
 
 /* ----------------------------------------------------------------
@@ -51,7 +54,7 @@ bool gDisableRxWorker = false;  // Used during test
 static void rxTask(struct k_work *pItem)
 {
     uPortRxContext_t *pCtx = CONTAINER_OF(pItem, uPortRxContext_t, rxWork);
-    uCxAtClientHandleRx(pCtx->pClient);
+    uCxAtClientHandleRxAvailable(pCtx->pClient);
 }
 
 /* ----------------------------------------------------------------
@@ -77,17 +80,20 @@ void uPortBgRxTaskCreate(uCxAtClient_t *pClient)
 {
     gRxContext.pClient = pClient;
     k_work_init(&gRxContext.rxWork, rxTask);
+    gRxWorkerReady = true;
+    uPortUartRxSignalFromIsr();
 }
 
 void uPortBgRxTaskDestroy(uCxAtClient_t *pClient)
 {
     (void)pClient;
+    gRxWorkerReady = false;
     k_work_cancel(&gRxContext.rxWork);
 }
 
-void uPortRxSignal(void)
+void uPortUartRxSignalFromIsr(void)
 {
-    if (!k_work_is_pending(&gRxContext.rxWork) && !gDisableRxWorker) {
+    if (gRxWorkerReady && !gDisableRxWorker) {
         k_work_submit(&gRxContext.rxWork);
     }
 }

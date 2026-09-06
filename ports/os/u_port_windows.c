@@ -26,6 +26,8 @@
 
 #include "u_cx_log.h"
 #include "u_cx_at_client.h"
+
+extern int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient);
 #include "u_port.h"
 
 /* ----------------------------------------------------------------
@@ -75,14 +77,16 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
                     "RX thread started");
 
      while (!pCtx->terminateRxTask) {
-        int32_t result = uCxAtClientHandleRx(pCtx->pClient);
-        if (result < 0) {
-            // Don't exit on error - module may have changed baud rate or rebooted
-            // Just break the loop and let the thread terminate gracefully
+        int32_t result = uPortUartWaitForData(pCtx->pClient->uartHandle, -1);
+        if (pCtx->terminateRxTask) {
             break;
         }
-        // Sleep for polling interval (10ms)
-        Sleep(10);
+        if (result > 0) {
+            result = uCxAtClientHandleRxAvailable(pCtx->pClient);
+        }
+        if (result < 0) {
+            break;
+        }
     }
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread terminated");
@@ -169,6 +173,7 @@ void uPortBgRxTaskDestroy(uCxAtClient_t *pClient)
     }
 
     gRxContext.terminateRxTask = true;
+    uPortUartWake(pClient->uartHandle);
     WaitForSingleObject(gRxContext.rxThread, 5000);
     CloseHandle(gRxContext.rxThread);
     gRxContext.rxThread = NULL;

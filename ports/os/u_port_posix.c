@@ -31,6 +31,8 @@
 #include "u_cx_at_client.h"
 #include "u_cx_log.h"
 
+extern int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient);
+
 /* ----------------------------------------------------------------
  * TYPES
  * -------------------------------------------------------------- */
@@ -82,17 +84,15 @@ static void *rxTask(void *pArg)
     uPortRxContext_t *pCtx = (uPortRxContext_t *)pArg;
 
     while (!pCtx->terminateRxTask) {
-        if (!pCtx->pClient->opened) {
-            U_CX_PORT_SLEEP_MS(10);
-            continue;
+        int32_t waitResult = uPortUartWaitForData(pCtx->pClient->uartHandle, -1);
+        if (pCtx->terminateRxTask) {
+            break;
         }
-
-        if (uCxAtClientHandleRx(pCtx->pClient) < 0) {
+        if ((waitResult < 0) ||
+            ((waitResult > 0) &&
+             (uCxAtClientHandleRxAvailable(pCtx->pClient) < 0))) {
             U_CX_PORT_SLEEP_MS(100);
-            continue;
         }
-
-        U_CX_PORT_SLEEP_MS(10);
     }
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX task terminated");
@@ -162,9 +162,9 @@ void uPortBgRxTaskCreate(uCxAtClient_t *pClient)
 
 void uPortBgRxTaskDestroy(uCxAtClient_t *pClient)
 {
-    (void)pClient;
     gRxContext.terminateRxTask = true;
     if (gRxContext.rxThreadCreated) {
+        uPortUartWake(pClient->uartHandle);
         pthread_join(gRxContext.rxThread, NULL);
         gRxContext.rxThreadCreated = false;
     }

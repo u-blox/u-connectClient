@@ -32,6 +32,8 @@
 #include "u_cx_at_client.h"
 #include "u_cx_log.h"
 
+extern int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient);
+
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
@@ -70,8 +72,10 @@ static void rxTask(void *pArg)
     uPortRxContext_t *pCtx = (uPortRxContext_t *)pArg;
 
     while (!pCtx->terminateRxTask) {
-        vTaskDelay(pdMS_TO_TICKS(10));  // 10ms delay
-        uCxAtClientHandleRx(pCtx->pClient);
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (!pCtx->terminateRxTask) {
+            uCxAtClientHandleRxAvailable(pCtx->pClient);
+        }
     }
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX task terminated");
@@ -137,15 +141,32 @@ void uPortBgRxTaskCreate(uCxAtClient_t *pClient)
         &taskHandle
     );
     gRxContext.rxTaskHandle = taskHandle;
+    if (taskHandle != NULL) {
+        xTaskNotifyGive(taskHandle);
+    }
 }
 
 void uPortBgRxTaskDestroy(uCxAtClient_t *pClient)
 {
     (void)pClient;
     gRxContext.terminateRxTask = true;
+    if (gRxContext.rxTaskHandle != NULL) {
+        xTaskNotifyGive(gRxContext.rxTaskHandle);
+    }
 
     // Wait for the task to release its handle before deleting itself.
     while (gRxContext.rxTaskHandle != NULL) {
         vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+void uPortUartRxSignalFromIsr(void)
+{
+    BaseType_t higherPriorityTaskWoken = pdFALSE;
+
+    if (gRxContext.rxTaskHandle != NULL) {
+        vTaskNotifyGiveFromISR(gRxContext.rxTaskHandle,
+                               &higherPriorityTaskWoken);
+        portYIELD_FROM_ISR(higherPriorityTaskWoken);
     }
 }

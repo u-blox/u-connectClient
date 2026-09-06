@@ -94,6 +94,20 @@ int32_t uPortUartWrite(uPortUartHandle_t handle, const void *pData, size_t lengt
  */
 int32_t uPortUartRead(uPortUartHandle_t handle, void *pData, size_t length, int32_t timeoutMs);
 
+/**
+ * @brief Wait until UART RX data is available or the wait is cancelled.
+ *
+ * @return 1 when data is available, 0 on timeout or cancellation, negative on
+ *         error.
+ */
+int32_t uPortUartWaitForData(uPortUartHandle_t handle, int32_t timeoutMs);
+
+/** Cancel a pending uPortUartWaitForData() call. */
+void uPortUartWake(uPortUartHandle_t handle);
+
+/** Notify the OS RX worker that UART data arrived from interrupt context. */
+void uPortUartRxSignalFromIsr(void);
+
 #ifdef __cplusplus
 }
 #endif

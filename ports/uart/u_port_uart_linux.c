@@ -43,6 +43,8 @@
  */
 typedef struct {
     int fd;  /**< File descriptor for the UART device */
+    int wakeReadFd;
+    int wakeWriteFd;
 } uPortUartHandle;
 
 /* ----------------------------------------------------------------
@@ -63,10 +65,25 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     if (pHandle == NULL) {
         return NULL;
     }
+    pHandle->fd = -1;
+    pHandle->wakeReadFd = -1;
+    pHandle->wakeWriteFd = -1;
+
+    int wakePipe[2];
+    if (pipe(wakePipe) != 0) {
+        free(pHandle);
+        return NULL;
+    }
+    pHandle->wakeReadFd = wakePipe[0];
+    pHandle->wakeWriteFd = wakePipe[1];
+    (void)fcntl(pHandle->wakeReadFd, F_SETFL, O_NONBLOCK);
+    (void)fcntl(pHandle->wakeWriteFd, F_SETFL, O_NONBLOCK);
 
     // Open the UART device
     pHandle->fd = open(pDevice, O_RDWR | O_NOCTTY);
     if (pHandle->fd < 0) {
+        close(pHandle->wakeReadFd);
+        close(pHandle->wakeWriteFd);
         free(pHandle);
         return NULL;
     }
@@ -75,6 +92,8 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     struct termios tty;
     if (tcgetattr(pHandle->fd, &tty) != 0) {
         close(pHandle->fd);
+        close(pHandle->wakeReadFd);
+        close(pHandle->wakeWriteFd);
         free(pHandle);
         return NULL;
     }
@@ -120,6 +139,8 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
             break;
         default:
             close(pHandle->fd);
+            close(pHandle->wakeReadFd);
+            close(pHandle->wakeWriteFd);
             free(pHandle);
             return NULL;
     }
@@ -155,6 +176,8 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
 
     if (tcsetattr(pHandle->fd, TCSANOW, &tty) != 0) {
         close(pHandle->fd);
+        close(pHandle->wakeReadFd);
+        close(pHandle->wakeWriteFd);
         free(pHandle);
         return NULL;
     }
@@ -167,6 +190,8 @@ void uPortUartClose(uPortUartHandle_t handle)
     if (handle != NULL) {
         uPortUartHandle *pHandle = (uPortUartHandle *)handle;
         close(pHandle->fd);
+        close(pHandle->wakeReadFd);
+        close(pHandle->wakeWriteFd);
         free(pHandle);
     }
 }
@@ -242,4 +267,44 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
     }
 
     return (int32_t)bytesRead;
+}
+
+int32_t uPortUartWaitForData(uPortUartHandle_t handle, int32_t timeoutMs)
+{
+    if (handle == NULL) {
+        return -1;
+    }
+
+    uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+    struct pollfd pollFds[] = {
+        {.fd = pHandle->fd, .events = POLLIN},
+        {.fd = pHandle->wakeReadFd, .events = POLLIN}
+    };
+    int result;
+    do {
+        result = poll(pollFds, 2, timeoutMs);
+    } while ((result < 0) && (errno == EINTR));
+
+    if (result <= 0) {
+        return result;
+    }
+    if ((pollFds[1].revents & POLLIN) != 0) {
+        uint8_t wakeData[16];
+        while (read(pHandle->wakeReadFd, wakeData, sizeof(wakeData)) > 0) {
+        }
+        return 0;
+    }
+    if ((pollFds[0].revents & POLLIN) != 0) {
+        return 1;
+    }
+    return -1;
+}
+
+void uPortUartWake(uPortUartHandle_t handle)
+{
+    if (handle != NULL) {
+        uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+        uint8_t wakeByte = 1;
+        (void)write(pHandle->wakeWriteFd, &wakeByte, sizeof(wakeByte));
+    }
 }

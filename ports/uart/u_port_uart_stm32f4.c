@@ -288,6 +288,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         }
         // If buffer full, drop the byte (could add overflow handling here)
 
+        uPortUartRxSignalFromIsr();
+
         // Restart reception
         (void)startRxInterrupt(gpUartHandle);
     }
