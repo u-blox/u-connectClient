@@ -27,6 +27,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -178,7 +179,8 @@ int32_t uPortUartWrite(uPortUartHandle_t handle,
                        const void *pData,
                        size_t length)
 {
-    if ((handle == NULL) || (pData == NULL) || (length == 0)) {
+    if ((handle == NULL) || (pData == NULL) || (length == 0) ||
+        (length > INT32_MAX)) {
         return -1;
     }
 
@@ -188,10 +190,19 @@ int32_t uPortUartWrite(uPortUartHandle_t handle,
         return -1;
     }
 
-    HAL_StatusTypeDef status = HAL_UART_Transmit(&pHandle->huart, (uint8_t *)pData, (uint16_t)length, HAL_MAX_DELAY);
+    const uint8_t *pBytes = (const uint8_t *)pData;
+    size_t bytesWritten = 0;
+    while (bytesWritten < length) {
+        size_t bytesRemaining = length - bytesWritten;
+        uint16_t chunkLength = bytesRemaining > UINT16_MAX ?
+                               UINT16_MAX : (uint16_t)bytesRemaining;
 
-    if (status != HAL_OK) {
-        return -1;
+        if (HAL_UART_Transmit(&pHandle->huart,
+                              (uint8_t *)(pBytes + bytesWritten),
+                              chunkLength, HAL_MAX_DELAY) != HAL_OK) {
+            return -1;
+        }
+        bytesWritten += chunkLength;
     }
 
     return (int32_t)length;
