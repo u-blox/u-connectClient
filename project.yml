@@ -22,6 +22,7 @@
     - +:test/**
     - -:test/support
     - -:test/posix/**
+    - -:test/stm32/**
   :source:
     - src/**
   :include:

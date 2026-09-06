@@ -93,6 +93,36 @@ def posix(c):
 
 
 @task
+def stm32_unit(c):
+    """Run host-based STM32 port tests and generate coverage."""
+    print("Running STM32 port unit tests...")
+    build_dir = os.path.join(REPO_ROOT, "build", "stm32-unit")
+    test_dir = os.path.join(REPO_ROOT, "test", "stm32")
+
+    c.run(f"cmake -S {test_dir} -B {build_dir} "
+          "-DENABLE_COVERAGE=ON -DENABLE_SANITIZERS=ON")
+    c.run(f"cmake --build {build_dir} --parallel")
+    c.run(f"ctest --test-dir {build_dir} --output-on-failure")
+    c.run(f"gcovr {build_dir} --root {REPO_ROOT} --object-directory {build_dir} "
+            "--filter 'ports/(os/u_port_freertos|uart/u_port_uart_stm32f4)\\.c' "
+          f"--txt --html-details {os.path.join(build_dir, 'coverage.html')}")
+
+
+@task(help={
+    'timeout': 'Timeout in seconds for each emulated example',
+})
+def stm32_renode(c, timeout=120):
+    """Run STM32 integration tests in Renode."""
+    print("Running STM32 Renode integration tests...")
+    timeout = int(timeout)
+    c.run("inv examples.stm32.http.emulate --build "
+          f"--timeout={timeout}")
+    c.run("SKIP_DOCKER_BUILD=1 "
+          "inv examples.stm32.socket.emulate --build "
+          f"--timeout={timeout}")
+
+
+@task
 def clean_ceedling(c):
     """Clean Ceedling build artifacts."""
     print("Cleaning Ceedling artifacts...")
@@ -113,6 +143,13 @@ def clean_posix(c):
     """Clean native POSIX test artifacts."""
     print("Cleaning POSIX test artifacts...")
     c.run(f"rm -rf {os.path.join(REPO_ROOT, 'build', 'posix')}")
+
+
+@task
+def clean_stm32_unit(c):
+    """Clean host-based STM32 test artifacts."""
+    print("Cleaning STM32 port unit test artifacts...")
+    c.run(f"rm -rf {os.path.join(REPO_ROOT, 'build', 'stm32-unit')}")
 
 
 @task
@@ -139,11 +176,18 @@ posix_ns = Collection('posix')
 posix_ns.add_task(posix, 'run')
 posix_ns.add_task(clean_posix, 'clean')
 
+# STM32 sub-collection under test
+stm32_ns = Collection('stm32')
+stm32_ns.add_task(stm32_unit, 'unit')
+stm32_ns.add_task(stm32_renode, 'renode')
+stm32_ns.add_task(clean_stm32_unit, 'clean')
+
 # Test namespace with sub-collections
 test_ns = Collection('test')
 test_ns.add_collection(ceedling_ns)
 test_ns.add_collection(zephyr_ns)
 test_ns.add_collection(posix_ns)
+test_ns.add_collection(stm32_ns)
 
 # Create main namespace
 ns = Collection()
