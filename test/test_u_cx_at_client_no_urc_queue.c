@@ -67,9 +67,48 @@ static uCxAtClientConfig_t gClientConfig = {
 
 static uCxAtClient_t gClient;
 
+static struct {
+    uCxAtClient_t *pClient;
+    void *pTag;
+    const uint8_t *pBinaryData;
+    size_t binaryDataLen;
+    int callbackCount;
+} gUrcCallbackExpectations;
+
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
  * -------------------------------------------------------------- */
+
+static void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine,
+                        size_t lineLength, uint8_t *pBinaryData,
+                        size_t binaryDataLen)
+{
+    TEST_ASSERT_EQUAL(gUrcCallbackExpectations.pClient, pClient);
+    TEST_ASSERT_EQUAL(gUrcCallbackExpectations.pTag, pTag);
+    TEST_ASSERT_EQUAL_STRING(TEST_URC, pLine);
+    TEST_ASSERT_EQUAL(strlen(TEST_URC), lineLength);
+    TEST_ASSERT_EQUAL(gUrcCallbackExpectations.binaryDataLen, binaryDataLen);
+    if (gUrcCallbackExpectations.pBinaryData == NULL) {
+        TEST_ASSERT_NULL(pBinaryData);
+    } else {
+        TEST_ASSERT_NOT_NULL(pBinaryData);
+        TEST_ASSERT_EQUAL_MEMORY(gUrcCallbackExpectations.pBinaryData,
+                                 pBinaryData, binaryDataLen);
+    }
+    gUrcCallbackExpectations.callbackCount++;
+}
+
+static void setUrcCallbackExpectations(uCxAtClient_t *pClient, void *pTag,
+                                       const uint8_t *pBinaryData,
+                                       size_t binaryDataLen)
+{
+    gUrcCallbackExpectations.pClient = pClient;
+    gUrcCallbackExpectations.pTag = pTag;
+    gUrcCallbackExpectations.pBinaryData = pBinaryData;
+    gUrcCallbackExpectations.binaryDataLen = binaryDataLen;
+    gUrcCallbackExpectations.callbackCount = 0;
+    uCxAtClientSetUrcCallback(pClient, urcCallback, pTag);
+}
 
 /* Mock UART open function */
 uPortUartHandle_t uPortUartOpen(const char *pDeviceName, int32_t baudRate, bool flowControl)
@@ -174,33 +213,20 @@ void tearDown(void)
 void test_uCxAtClientHandleRx_withStringUrc_expectUrcCallback(void)
 {
     char rxData[] = { "\r\n" TEST_URC "\r\n" };
-    int callbackCount = 0;
     gPRxDataPtr = (uint8_t *)&rxData[0];
     gRxDataLen = strlen(rxData);
 
-    void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine,
-                     size_t lineLength, uint8_t *pBinaryData, size_t binaryDataLen)
-    {
-        TEST_ASSERT_EQUAL(&gClient, pClient);
-        TEST_ASSERT_NULL(pTag);
-        TEST_ASSERT_EQUAL_STRING(TEST_URC, pLine);
-        TEST_ASSERT_EQUAL(strlen(pLine), lineLength);
-        TEST_ASSERT_NULL(pBinaryData);
-        TEST_ASSERT_EQUAL(0, binaryDataLen);
-        callbackCount++;
-    }
-
-    uCxAtClientSetUrcCallback(&gClient, urcCallback, NULL);
+    setUrcCallbackExpectations(&gClient, NULL, NULL, 0);
     uCxAtClientHandleRx(&gClient);
-    TEST_ASSERT_EQUAL(1, callbackCount);
+    TEST_ASSERT_EQUAL(1, gUrcCallbackExpectations.callbackCount);
 }
 
 void test_uCxAtClientHandleRx_withFragmentedBinUrc_expectUrcCallback(void)
 {
     char strData[] = { "\r\n" TEST_URC };
     uint8_t binData[] = {BIN_HDR(6),0xa5,0x01,0x0d,0x0a,0x00,0xff};
+    uint8_t expectedBinData[] = {0xa5,0x01,0x0d,0x0a,0x00,0xff};
     uint8_t rxData[strlen(strData) + sizeof(binData)];
-    int callbackCount = 0;
     memcpy(&rxData[0], &strData[0], strlen(strData));
     memcpy(&rxData[strlen(strData)], &binData[0], sizeof(binData));
     gPRxDataPtr = &rxData[0];
@@ -208,34 +234,21 @@ void test_uCxAtClientHandleRx_withFragmentedBinUrc_expectUrcCallback(void)
     gRxMaxReadSize = 1;
     gClientConfig.rxBufferLen = strlen(TEST_URC) + 1 + 6;
 
-    void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine,
-                     size_t lineLength, uint8_t *pBinaryData, size_t binaryDataLen)
-    {
-        uint8_t expectedBinData[] = {0xa5,0x01,0x0d,0x0a,0x00,0xff};
-        TEST_ASSERT_EQUAL(&gClient, pClient);
-        TEST_ASSERT_NULL(pTag);
-        TEST_ASSERT_EQUAL_STRING(TEST_URC, pLine);
-        TEST_ASSERT_EQUAL(strlen(pLine), lineLength);
-        TEST_ASSERT_NOT_NULL(pBinaryData);
-        TEST_ASSERT_EQUAL(sizeof(expectedBinData), binaryDataLen);
-        TEST_ASSERT_EQUAL_MEMORY(expectedBinData, pBinaryData, sizeof(expectedBinData));
-        callbackCount++;
-    }
-
-    uCxAtClientSetUrcCallback(&gClient, urcCallback, NULL);
+    setUrcCallbackExpectations(&gClient, NULL, expectedBinData,
+                               sizeof(expectedBinData));
     uCxAtClientHandleRx(&gClient);
-    TEST_ASSERT_EQUAL(0, callbackCount);
+    TEST_ASSERT_EQUAL(0, gUrcCallbackExpectations.callbackCount);
     TEST_ASSERT_TRUE(gClient.isBinaryRx);
     TEST_ASSERT_EQUAL(1, gClient.binaryRx.rxHeaderCount);
     gRxDataLen = 3;
     uCxAtClientHandleRx(&gClient);
-    TEST_ASSERT_EQUAL(0, callbackCount);
+    TEST_ASSERT_EQUAL(0, gUrcCallbackExpectations.callbackCount);
     TEST_ASSERT_TRUE(gClient.isBinaryRx);
     TEST_ASSERT_EQUAL(2, gClient.binaryRx.bufferPos);
     TEST_ASSERT_EQUAL(4, gClient.binaryRx.remainingDataBytes);
     gRxDataLen = 4;
     uCxAtClientHandleRx(&gClient);
-    TEST_ASSERT_EQUAL(1, callbackCount);
+    TEST_ASSERT_EQUAL(1, gUrcCallbackExpectations.callbackCount);
     TEST_ASSERT_FALSE(gClient.isBinaryRx);
     TEST_ASSERT_EQUAL(0, gRxDataLen);
 }
@@ -246,29 +259,16 @@ void test_uCxAtClientHandleRx_withOversizedBinUrc_expectDiscardAndRecovery(void)
     uint8_t binData[] = {BIN_HDR(6),0xa5,0x01,0x0d,0x0a,0x00,0xff};
     uint8_t rxData[strlen(strData) + sizeof(binData)];
     char nextUrc[] = { "\r\n" TEST_URC "\r\n" };
-    int callbackCount = 0;
 
     memcpy(rxData, strData, strlen(strData));
     memcpy(&rxData[strlen(strData)], binData, sizeof(binData));
     gClientConfig.rxBufferLen = strlen(TEST_URC) + 1 + 5;
 
-    void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine,
-                     size_t lineLength, uint8_t *pBinaryData, size_t binaryDataLen)
-    {
-        TEST_ASSERT_EQUAL(&gClient, pClient);
-        TEST_ASSERT_NULL(pTag);
-        TEST_ASSERT_EQUAL_STRING(TEST_URC, pLine);
-        TEST_ASSERT_EQUAL(strlen(TEST_URC), lineLength);
-        TEST_ASSERT_NULL(pBinaryData);
-        TEST_ASSERT_EQUAL(0, binaryDataLen);
-        callbackCount++;
-    }
-
-    uCxAtClientSetUrcCallback(&gClient, urcCallback, NULL);
+    setUrcCallbackExpectations(&gClient, NULL, NULL, 0);
     gPRxDataPtr = rxData;
     gRxDataLen = sizeof(rxData);
     uCxAtClientHandleRx(&gClient);
-    TEST_ASSERT_EQUAL(0, callbackCount);
+    TEST_ASSERT_EQUAL(0, gUrcCallbackExpectations.callbackCount);
     TEST_ASSERT_FALSE(gClient.isBinaryRx);
     TEST_ASSERT_EQUAL(0, gRxDataLen);
 
@@ -276,7 +276,7 @@ void test_uCxAtClientHandleRx_withOversizedBinUrc_expectDiscardAndRecovery(void)
     gPRxDataPtr = (uint8_t *)nextUrc;
     gRxDataLen = strlen(nextUrc);
     uCxAtClientHandleRx(&gClient);
-    TEST_ASSERT_EQUAL(1, callbackCount);
+    TEST_ASSERT_EQUAL(1, gUrcCallbackExpectations.callbackCount);
 }
 
 void test_uCxAtClientHandleRx_withInterleavedBinaryHeaders_expectPerClientLength(void)
@@ -288,7 +288,6 @@ void test_uCxAtClientHandleRx_withInterleavedBinaryHeaders_expectPerClientLength
     uint8_t firstHeader[strlen(strData) + 2];
     uint8_t secondHeader[strlen(strData) + 2];
     uint8_t firstTail[258];
-    int callbackCount = 0;
 
     secondConfig.pRxBuffer = secondRxBuffer;
     uCxAtClientInit(&secondConfig, &secondClient);
@@ -305,21 +304,8 @@ void test_uCxAtClientHandleRx_withInterleavedBinaryHeaders_expectPerClientLength
         firstTail[index + 1] = (uint8_t)index;
     }
 
-    void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine,
-                     size_t lineLength, uint8_t *pBinaryData, size_t binaryDataLen)
-    {
-        TEST_ASSERT_EQUAL(&gClient, pClient);
-        TEST_ASSERT_NULL(pTag);
-        TEST_ASSERT_EQUAL_STRING(TEST_URC, pLine);
-        TEST_ASSERT_EQUAL(strlen(TEST_URC), lineLength);
-        TEST_ASSERT_EQUAL(257, binaryDataLen);
-        for (size_t index = 0; index < binaryDataLen; index++) {
-            TEST_ASSERT_EQUAL_UINT8((uint8_t)index, pBinaryData[index]);
-        }
-        callbackCount++;
-    }
-
-    uCxAtClientSetUrcCallback(&gClient, urcCallback, NULL);
+    setUrcCallbackExpectations(&gClient, NULL, &firstTail[1],
+                               sizeof(firstTail) - 1);
     gPRxDataPtr = firstHeader;
     gRxDataLen = sizeof(firstHeader);
     uCxAtClientHandleRx(&gClient);
@@ -333,7 +319,7 @@ void test_uCxAtClientHandleRx_withInterleavedBinaryHeaders_expectPerClientLength
     gPRxDataPtr = firstTail;
     gRxDataLen = sizeof(firstTail);
     uCxAtClientHandleRx(&gClient);
-    TEST_ASSERT_EQUAL(1, callbackCount);
+    TEST_ASSERT_EQUAL(1, gUrcCallbackExpectations.callbackCount);
     TEST_ASSERT_FALSE(gClient.isBinaryRx);
     TEST_ASSERT_EQUAL(0, gRxDataLen);
 

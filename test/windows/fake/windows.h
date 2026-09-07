@@ -80,6 +80,28 @@ typedef struct {
 #define WAIT_FAILED 0xffffffffUL
 #define INFINITE 0xffffffffUL
 
+#define CreateFileA fakeWindowsCreateFileA
+#define SetupComm fakeWindowsSetupComm
+#define GetCommState fakeWindowsGetCommState
+#define SetCommState fakeWindowsSetCommState
+#define SetCommTimeouts fakeWindowsSetCommTimeouts
+#define SetCommMask fakeWindowsSetCommMask
+#define PurgeComm fakeWindowsPurgeComm
+#define WriteFile fakeWindowsWriteFile
+#define ReadFile fakeWindowsReadFile
+#define ClearCommError fakeWindowsClearCommError
+#define WaitCommEvent fakeWindowsWaitCommEvent
+#define CancelIoEx fakeWindowsCancelIoEx
+#define GetLastError fakeWindowsGetLastError
+#define CloseHandle fakeWindowsCloseHandle
+#define QueryPerformanceFrequency fakeWindowsQueryPerformanceFrequency
+#define QueryPerformanceCounter fakeWindowsQueryPerformanceCounter
+#define WaitForSingleObject fakeWindowsWaitForSingleObject
+#define CreateSemaphore fakeWindowsCreateSemaphore
+#define ReleaseSemaphore fakeWindowsReleaseSemaphore
+#define CreateThread fakeWindowsCreateThread
+#define Sleep fakeWindowsSleep
+
 HANDLE CreateFileA(LPCSTR pName, DWORD access, DWORD shareMode,
                    LPSECURITY_ATTRIBUTES pSecurity, DWORD creation,
                    DWORD flags, HANDLE templateFile);

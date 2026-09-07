@@ -130,10 +130,11 @@ def windows(c):
     print("Running Windows port tests...")
     build_dir = os.path.join(REPO_ROOT, "build", "windows")
     test_dir = os.path.join(REPO_ROOT, "test", "windows")
+    build_config = "Debug"
 
     c.run(f"cmake -S {test_dir} -B {build_dir}")
-    c.run(f"cmake --build {build_dir} --parallel")
-    c.run(f"ctest --test-dir {build_dir} --output-on-failure")
+    c.run(f"cmake --build {build_dir} --config {build_config} --parallel")
+    c.run(f"ctest --test-dir {build_dir} -C {build_config} --output-on-failure")
 
 
 @task(help={

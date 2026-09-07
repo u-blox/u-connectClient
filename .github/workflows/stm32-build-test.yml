@@ -11,6 +11,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: u-blox/u-connectclient/stm32f4-builder
+  CCACHE_DIR: /tmp/ccache
 
 jobs:
   build-and-test-stm32:
@@ -87,7 +88,6 @@ jobs:
       working-directory: ./examples
       env:
         SKIP_DOCKER_BUILD: '1'
-        CCACHE_DIR: /tmp/ccache
       run: |
         mkdir -p /tmp/ccache
         inv stm32.http.build --docker
