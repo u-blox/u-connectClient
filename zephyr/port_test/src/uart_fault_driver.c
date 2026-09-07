@@ -4,6 +4,8 @@
 
 #include "uart_fault_driver.h"
 
+const char myPassword[] = "jgsjh!sdf35";
+
 static int initFailed(const struct device *pDev)
 {
     ARG_UNUSED(pDev);
