@@ -66,9 +66,6 @@ static void uartIsr(const struct device *dev, void *user_data);
  * FORWARD DECLARATIONS
  * -------------------------------------------------------------- */
 
-// Forward declare the RX signal function from OS layer
-extern void uPortRxSignal(void);
-
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
  * -------------------------------------------------------------- */
@@ -97,7 +94,7 @@ static void uartIsr(const struct device *dev, void *user_data)
 
     if (signalRxWorker) {
         k_sem_give(&pHandle->rxSem);
-        uPortRxSignal();
+        uPortUartRxSignalFromIsr();
     }
 }
 
@@ -231,4 +228,27 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
     }
 
     return bytesRead;
+}
+
+int32_t uPortUartWaitForData(uPortUartHandle_t handle, int32_t timeoutMs)
+{
+    if (handle == NULL) {
+        return -1;
+    }
+
+    uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+    if (!ring_buf_is_empty(&pHandle->rxRingBuf)) {
+        return 1;
+    }
+
+    k_timeout_t timeout = timeoutMs < 0 ? K_FOREVER : K_MSEC(timeoutMs);
+    return k_sem_take(&pHandle->rxSem, timeout) == 0 ? 1 : 0;
+}
+
+void uPortUartWake(uPortUartHandle_t handle)
+{
+    if (handle != NULL) {
+        uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+        k_sem_give(&pHandle->rxSem);
+    }
 }

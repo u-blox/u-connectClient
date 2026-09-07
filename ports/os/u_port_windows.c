@@ -26,6 +26,8 @@
 
 #include "u_cx_log.h"
 #include "u_cx_at_client.h"
+
+extern int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient);
 #include "u_port.h"
 
 /* ----------------------------------------------------------------
@@ -216,6 +218,7 @@ void uPortBgRxTaskDestroy(uCxAtClient_t *pClient)
     }
 
     gRxContext.terminateRxTask = true;
+    uPortUartWake(pClient->uartHandle);
     WaitForSingleObject(gRxContext.rxThread, 5000);
     CloseHandle(gRxContext.rxThread);
     gRxContext.rxThread = NULL;

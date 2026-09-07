@@ -23,9 +23,9 @@ jobs:
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
-        ruby-version: 2.7
+        ruby-version: '3.2'
     - name: Install Ceedling
-      run: gem install ceedling -v 0.31.1
+      run: gem install ceedling --version 1.0.1 --no-document
     - name: Install PyInvoke
       run: pip install invoke
     - name: Run Unit Tests

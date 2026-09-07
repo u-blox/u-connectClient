@@ -40,21 +40,23 @@
  * STATIC VARIABLES
  * -------------------------------------------------------------- */
 
-static int32_t gBootTime = 0;
+static uint32_t gBootTime = 0;
+static bool gInitialized = false;
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
  * -------------------------------------------------------------- */
 
-static int32_t getTickTimeMs(void)
+static uint32_t getTickTimeMs(void)
 {
 #ifdef _WIN32
-    return (int32_t)GetTickCount();
+    return (uint32_t)GetTickCount();
 #else
     struct timespec time;
     clock_gettime(CLOCK_MONOTONIC_RAW, &time);
-    int64_t timeMs = (time.tv_sec * 1000) + (time.tv_nsec / (1000 * 1000));
-    return (int32_t)(timeMs % (1000 * 60 * 60 * 24));
+    uint64_t timeMs = ((uint64_t)time.tv_sec * 1000U) +
+                      ((uint64_t)time.tv_nsec / 1000000U);
+    return (uint32_t)timeMs;
 #endif
 }
 
@@ -64,8 +66,9 @@ static int32_t getTickTimeMs(void)
 
 void uPortInit(void)
 {
-    if (gBootTime == 0) {
+    if (!gInitialized) {
         gBootTime = getTickTimeMs();
+        gInitialized = true;
     }
 }
 
@@ -76,13 +79,17 @@ void uPortDeinit(void)
 
 int32_t uPortGetTickTimeMs(void)
 {
-    return getTickTimeMs() - gBootTime;
+    return (int32_t)(getTickTimeMs() - gBootTime);
 }
 
 int32_t uPortSleepMs(int32_t ms)
 {
-    int32_t startTime = getTickTimeMs();
-    while (getTickTimeMs() - startTime < ms) {
+    if (ms <= 0) {
+        return 0;
+    }
+
+    uint32_t startTime = getTickTimeMs();
+    while ((getTickTimeMs() - startTime) < (uint32_t)ms) {
         // Busy wait
     }
     return 0;
@@ -106,4 +113,9 @@ void uPortBgRxTaskDestroy(uCxAtClient_t *pClient)
 {
     (void)pClient;
     // Nothing to do
+}
+
+void uPortUartRxSignalFromIsr(void)
+{
+    // No scheduler to wake. The application calls uCxAtClientHandleRx().
 }

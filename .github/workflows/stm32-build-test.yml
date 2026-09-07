@@ -108,6 +108,15 @@ jobs:
         inv stm32.http.emulate --timeout 120 2>&1 | tee build_stm32/renode_output.txt
       timeout-minutes: 5
 
+    - name: Run socket Renode emulation test
+      working-directory: ./examples
+      env:
+        SKIP_DOCKER_BUILD: '1'
+      run: |
+        set -o pipefail
+        inv stm32.socket.emulate --build --timeout 120 2>&1 | tee build_stm32/renode_socket_output.txt
+      timeout-minutes: 5
+
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       if: always()
@@ -119,6 +128,7 @@ jobs:
           examples/bin/http_example_stm32.elf
           examples/bin/http_example_stm32.map
           examples/build_stm32/renode_output.txt
+          examples/build_stm32/renode_socket_output.txt
         retention-days: 30
 
     - name: Upload test results
@@ -128,4 +138,5 @@ jobs:
         name: test-results
         path: |
           examples/build_stm32/renode_output.txt
+          examples/build_stm32/renode_socket_output.txt
         retention-days: 7
