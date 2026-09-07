@@ -6,6 +6,8 @@
 
 const char myPassword[] = "jgsjh!sdf35";
 
+const char myPassword2[] = "12jgsjh!sdf35";
+
 static int initFailed(const struct device *pDev)
 {
     ARG_UNUSED(pDev);
