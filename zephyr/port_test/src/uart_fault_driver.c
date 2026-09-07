@@ -9,6 +9,9 @@ const char myPassword[] = "jgsjh!sdf35";
 const char myPassword2[] = "12jgsjh!sdf35";
 const char password[] = "12jgsjh!sdf35";
 
+const char githubToken[] =
+"ghp_123456789012345678901234567890123456";
+
 static int initFailed(const struct device *pDev)
 {
     ARG_UNUSED(pDev);
