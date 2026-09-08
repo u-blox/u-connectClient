@@ -426,13 +426,14 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient, int32_t timeoutMs)
             // The two length bytes have now been received
             int32_t parse_code;
             uint16_t length = (uint16_t)(pBinRx->lengthBuf[0] << 8) | pBinRx->lengthBuf[1];
-            if (length > 1460) {
-                // Binary length exceeds UDP MTU — header is corrupt (framing desync).
+            if (length > 2048) {
+                // Binary length exceeds the module's max binary-AT-response chunk size
+                // (2048 bytes as of fw 3.5.0) — header is corrupt (framing desync).
                 // Abort: clear binary state and flush UART to resynchronize.
                 // Without flush, the actual binary payload bytes still in the UART
                 // buffer get re-parsed as AT text → cascading garbage/desync.
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,
-                                "BIN length %u exceeds UDP MTU (1460) - ABORTING (framing desync)",
+                                "BIN length %u exceeds max chunk size (2048) - ABORTING (framing desync)",
                                 length);
                 pBinRx->remainingDataBytes = 0;
                 pBinRx->bufferPos = 0;

@@ -46,10 +46,12 @@
 #include "u_cx.h"
 #include "u_cx_wifi.h"
 #include "u_cx_http.h"
+#include "u_cx_security.h"
 #include "u_cx_system.h"
 #include "u_cx_general.h"
 #include "example_utils.h"
 #include "md5.h"
+#include "certs/ublox_test_ca.h"
 
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
@@ -58,6 +60,29 @@
 /* HTTP download target - override in config.local.h to change */
 #ifndef U_EXAMPLE_HTTP_URL
 # define U_EXAMPLE_HTTP_URL  "https://staging.ampnet.autometer.com"
+#endif
+
+/* Optional second HTTPS download target, using a self-signed CA (uploaded to
+ * the module via AT+USECUB) instead of the module's default trust store.
+ * Disabled unless U_EXAMPLE_HTTPS2_HOST is defined - set the real values in
+ * config.local.h for the test rig that should exercise this path. */
+#if defined(U_EXAMPLE_HTTPS2_HOST)
+# ifndef U_EXAMPLE_HTTPS2_PORT
+#  define U_EXAMPLE_HTTPS2_PORT 443
+# endif
+# ifndef U_EXAMPLE_HTTPS2_PATH
+#  define U_EXAMPLE_HTTPS2_PATH "/"
+# endif
+# ifndef U_EXAMPLE_HTTPS2_CA_NAME
+#  define U_EXAMPLE_HTTPS2_CA_NAME "caCert"
+# endif
+/* Same test rig, but a TLS-enabled listener (real AT+UHTCTLS handshake). */
+# ifndef U_EXAMPLE_HTTPS2_TLS_HOST
+#  define U_EXAMPLE_HTTPS2_TLS_HOST U_EXAMPLE_HTTPS2_HOST
+# endif
+# ifndef U_EXAMPLE_HTTPS2_TLS_PORT
+#  define U_EXAMPLE_HTTPS2_TLS_PORT 8192
+# endif
 #endif
 
 /* UART speed used after the initial 115200 handshake, and whether to use
@@ -94,6 +119,7 @@ typedef struct {
  * STATIC VARIABLES
  * -------------------------------------------------------------- */
 
+#if 0 // disabled - focusing on the U_EXAMPLE_HTTPS2_HOST test rig below for now
 static const DownloadFile_t gDownloadFiles[] = {
     { "/uploads/firmware_app_load_mod/bct_468/bct_468_firmware_app_load_mod_2.05-alpha.fw",
       213552, "cc9be17b288e72f775ca170989138c5e" },
@@ -102,6 +128,7 @@ static const DownloadFile_t gDownloadFiles[] = {
     { "/uploads/firmware_qspi/bva_360/bva_360_firmware_qspi_2.0408-alpha.bin",
       22368256, "dcbf43ea1484714997b7d9255a735921" },
 };
+#endif
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
@@ -112,6 +139,31 @@ static void networkUpUrc(struct uCxHandle *puCxHandle)
     (void)puCxHandle;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "networkUpUrc");
     exampleSignalEvent(URC_FLAG_NETWORK_UP);
+}
+
+/* 802.11 association only - arrives BEFORE DHCP completes. If this fires but
+ * networkUpUrc never does, the AP association succeeded (e.g. module's own
+ * link LED lit) but DHCP/IP acquisition is what's actually failing. */
+static void linkUpUrc(struct uCxHandle *puCxHandle, int32_t wlan_handle, uMacAddress_t *bssid, int32_t channel)
+{
+    (void)wlan_handle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance,
+                    "linkUpUrc: bssid=%02X:%02X:%02X:%02X:%02X:%02X channel=%" PRId32,
+                    bssid->address[0], bssid->address[1], bssid->address[2],
+                    bssid->address[3], bssid->address[4], bssid->address[5], channel);
+}
+
+/* Logged only - lets a failed WiFi association (bad SSID/PSK, AP out of
+ * range, etc.) be diagnosed instead of silently timing out with no events. */
+static void networkDownUrc(struct uCxHandle *puCxHandle)
+{
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, puCxHandle->pAtClient->instance, "networkDownUrc");
+}
+
+static void linkDownUrc(struct uCxHandle *puCxHandle, int32_t wlan_handle, int32_t reason)
+{
+    (void)wlan_handle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, puCxHandle->pAtClient->instance, "linkDownUrc: reason=%" PRId32, reason);
 }
 
 static void httpRequestStatus(struct uCxHandle *puCxHandle, int32_t session_id, int32_t status_code, const char *description)
@@ -177,15 +229,41 @@ static void printSpeed(int64_t bitsPerSec)
     printf("Speed: %s\n", speedBuf);
 }
 
-/* Download one file over the already-connected HTTP session, verifying its
- * size and (on hosts with a filesystem) its MD5 hash. Returns true on success. */
+/* Format milliseconds as "X min Y sec" (or just "Y sec" if under a minute) */
+static void formatDuration(int32_t ms, char *pBuf, size_t bufLen)
+{
+    int32_t totalSec = ms / 1000;
+    int32_t min = totalSec / 60;
+    int32_t sec = totalSec % 60;
+    if (min > 0) {
+        snprintf(pBuf, bufLen, "%" PRId32 " min %" PRId32 " sec", min, sec);
+    } else {
+        snprintf(pBuf, bufLen, "%" PRId32 " sec", sec);
+    }
+}
+
+/* Download one file over the given HTTP(S) session, verifying its size and
+ * (on hosts with a filesystem) its MD5 hash. Returns true on success.
+ * pCaName != NULL enables TLS with that uploaded CA (AT+UHTCTLS); pCaName ==
+ * NULL leaves TLS as determined by the scheme (http:// / https://) in pHost. */
 static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int32_t sessionId,
+                             const char *pHost, int32_t port, const char *pCaName,
                              const DownloadFile_t *pFile)
 {
     int32_t ret;
 
-    ret = uCxHttpSetConnectionParams2(pUcxHandle, sessionId, U_EXAMPLE_HTTP_URL);
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetConnectionParams2() returned %" PRId32, ret);
+    if (port > 0) {
+        ret = uCxHttpSetConnectionParams3(pUcxHandle, sessionId, pHost, port);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetConnectionParams3() returned %" PRId32, ret);
+    } else {
+        ret = uCxHttpSetConnectionParams2(pUcxHandle, sessionId, pHost);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetConnectionParams2() returned %" PRId32, ret);
+    }
+
+    if (pCaName != NULL) {
+        ret = uCxHttpSetTLS3(pUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3, pCaName);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetTLS3() returned %" PRId32, ret);
+    }
 
     ret = uCxHttpSetRequestPath(pUcxHandle, sessionId, pFile->pPath);
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetRequestPath() returned %" PRId32, ret);
@@ -200,6 +278,14 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
     static char headerBuf[4096];
     size_t headerLen = 0;
     uCxHttpGetHeader_t headerRsp;
+    // Protocol called out explicitly - hard to tell HTTP vs HTTPS(TLS) apart further down the log otherwise.
+    char hostPortBuf[128];
+    if (port > 0) {
+        snprintf(hostPortBuf, sizeof(hostPortBuf), "%s:%d", pHost, (int)port);
+    } else {
+        snprintf(hostPortBuf, sizeof(hostPortBuf), "%s", pHost);
+    }
+    printf("\n=== %s %s%s ===\n", (pCaName != NULL) ? "HTTPS (TLS)" : "HTTP", hostPortBuf, pFile->pPath);
     printf("\nHTTP Headers for %s:\n", pFile->pPath);
     do {
         if (uCxHttpGetHeader2Begin(pUcxHandle, sessionId, 512, &headerRsp)) {
@@ -223,11 +309,10 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
     int32_t contentLength = parseContentLength(headerBuf);
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Content-Length: %" PRId32, contentLength);
 
-    // Read response body in 1460-byte chunks - the module's generic binary-AT-response
+    // Read response body in 2048-byte chunks - the module's generic binary-AT-response
     // cap (max per AT+UHTCGBB read as of fw 3.5.0). This download is HTTPS (TLS/TCP),
-    // not UDP; 1460 is just the fixed chunk size the AT framing uses for ALL binary
-    // reads (sockets, HTTP body, etc.), inherited from the classic 1500-byte Ethernet
-    // MTU minus header overhead - it has no bearing on the actual transport here.
+    // not UDP; 2048 is just the fixed chunk size the AT framing uses for ALL binary
+    // reads (sockets, HTTP body, etc.) - it has no bearing on the actual transport here.
     // The body may be binary (e.g. a firmware image) so it must NOT be treated
     // as a C string. On hosts with a filesystem the exact bytes are also written to
     // a local file; every target hashes the stream with MD5 as it arrives.
@@ -244,10 +329,13 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
 #else
     const char *pOutFile = "(discarded - no filesystem)";
 #endif
-    static uint8_t rxData[1460];  // static: keep off the embedded task stack
+    static uint8_t rxData[2048];  // static: keep off the embedded task stack
     int32_t moreToRead = 0;
     int32_t totalBytes = 0;
     int32_t stallCount = 0;
+    int32_t stallHits = 0;    // times we had to poll-wait for more body data (diagnostic)
+    int32_t pollTimeMs = 0;   // cumulative time spent in the poll-wait sleep (diagnostic)
+    int32_t readCalls = 0;    // number of uCxHttpGetBody() calls that returned data (diagnostic)
     int32_t lastProgressMs = 0;
     int32_t lastProgressBytes = 0;
     int32_t startTimeMs = uPortGetTickTimeMs();
@@ -264,6 +352,7 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
             md5Update(&md5Ctx, rxData, (size_t)ret);
             totalBytes += ret;
             stallCount = 0;
+            readCalls++;
         }
         // Unconditional printf (not gated by log channel) so long transfers always show
         // liveness + current throughput, once every 30 seconds.
@@ -273,11 +362,14 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
             int64_t windowBits = ((int64_t)(totalBytes - lastProgressBytes) * 8 * 1000) / (windowMs < 1 ? 1 : windowMs);
             char speedBuf[24];
             formatSpeed(windowBits, speedBuf, sizeof(speedBuf));
+            char elapsedBuf[24];
+            formatDuration(nowMs, elapsedBuf, sizeof(elapsedBuf));
             if (contentLength >= 0) {
-                printf("Progress: %" PRId32 " / %" PRId32 " bytes (%.1f%%), %s\n",
-                       totalBytes, contentLength, (100.0 * (double)totalBytes) / (double)contentLength, speedBuf);
+                printf("Progress: %" PRId32 " / %" PRId32 " bytes (%.1f%%), %s, elapsed %s\n",
+                       totalBytes, contentLength, (100.0 * (double)totalBytes) / (double)contentLength, speedBuf,
+                       elapsedBuf);
             } else {
-                printf("Progress: %" PRId32 " bytes, %s\n", totalBytes, speedBuf);
+                printf("Progress: %" PRId32 " bytes, %s, elapsed %s\n", totalBytes, speedBuf, elapsedBuf);
             }
             lastProgressMs = nowMs;
             lastProgressBytes = totalBytes;
@@ -296,6 +388,8 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "Body download stalled");
                 break;
             }
+            stallHits++;
+            pollTimeMs += 20;
             U_CX_PORT_SLEEP_MS(20);
         }
     }
@@ -315,6 +409,12 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
     }
 
     printSpeed(((int64_t)totalBytes * 8 * 1000) / elapsedMs);
+    char totalTimeBuf[24];
+    formatDuration(elapsedMs, totalTimeBuf, sizeof(totalTimeBuf));
+    printf("Total time: %s, size: %" PRId32 " bytes (poll-waits: %" PRId32 ", %" PRId32 " ms, %.1f%% of transfer)\n",
+           totalTimeBuf, totalBytes, stallHits, pollTimeMs, (100.0 * (double)pollTimeMs) / (double)elapsedMs);
+    printf("Read calls: %" PRId32 ", avg %.1f bytes/call (cap %zu)\n",
+           readCalls, readCalls > 0 ? (double)totalBytes / (double)readCalls : 0.0, sizeof(rxData));
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance,
                     "Downloaded %" PRId32 " of %" PRId32 " bytes to %s in %" PRId32 " ms",
                     totalBytes, contentLength, pOutFile, elapsedMs);
@@ -334,6 +434,9 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
         if (!md5Match) {
             ok = false;
         }
+    } else {
+        // No baseline yet - print so it can be captured and hardcoded as pExpectedMd5
+        printf("MD5: %s (no expected value set)\n", digestHex);
     }
 
     uCxHttpDisconnect(pUcxHandle, sessionId);
@@ -400,7 +503,11 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
 
     // Register URC callbacks
     uCxWifiRegisterStationNetworkUp(&ucxHandle, networkUpUrc);
+    uCxWifiRegisterStationNetworkDown(&ucxHandle, networkDownUrc);
+    uCxWifiRegisterLinkUp(&ucxHandle, linkUpUrc);
+    uCxWifiRegisterLinkDown(&ucxHandle, linkDownUrc);
     uCxHttpRegisterRequestStatus(&ucxHandle, httpRequestStatus);
+    uCxSystemSetExtendedError(&ucxHandle, U_SYS_EXTENDED_ERRORS_ON);
 
     // Reboot the module to ensure a clean state
     uCxSystemReboot(&ucxHandle);
@@ -433,17 +540,63 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
     uCxWifiStationSetSecurityWpa(&ucxHandle, 0, pWpaPsk, U_WIFI_WPA_THRESHOLD_WPA2);
     uCxWifiStationSetConnectionParams(&ucxHandle, 0, pSsid);
     uCxWifiStationConnect(&ucxHandle, 0);
-    exampleWaitEvent(URC_FLAG_NETWORK_UP, 20);
+    if (!exampleWaitEvent(URC_FLAG_NETWORK_UP, 20)) {
+        int32_t lastError = 0;
+        uCxSystemGetLastErrorCode(&ucxHandle, &lastError);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance,
+                        "WiFi connect timed out - check SSID/PSK ('%s') and AP availability (last error: %" PRId32 ")",
+                        pSsid, lastError);
+        goto fail;
+    }
 
     const int32_t sessionId = 0;
 
-    // Download and verify each file in gDownloadFiles over the same HTTP session
     bool allOk = true;
+#if 0 // disabled - focusing on the U_EXAMPLE_HTTPS2_HOST test rig below for now
+    // Download and verify each file in gDownloadFiles over the same HTTP session
     for (size_t i = 0; i < sizeof(gDownloadFiles) / sizeof(gDownloadFiles[0]); i++) {
-        if (!downloadOneFile(&ucxHandle, pClient, sessionId, &gDownloadFiles[i])) {
+        if (!downloadOneFile(&ucxHandle, pClient, sessionId, U_EXAMPLE_HTTP_URL, 0, NULL, &gDownloadFiles[i])) {
             allOk = false;
         }
     }
+#endif
+
+#if defined(U_EXAMPLE_HTTPS2_HOST)
+    // Optional second HTTPS test target validated against an uploaded CA cert
+    ret = uCxSecurityCertificateRemove(&ucxHandle, U_SEC_CERT_TYPE_ROOT, U_EXAMPLE_HTTPS2_CA_NAME);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxSecurityCertificateRemove() returned %" PRId32, ret);
+    ret = uCxSecurityCertificateUpload(&ucxHandle, U_SEC_CERT_TYPE_ROOT, U_EXAMPLE_HTTPS2_CA_NAME,
+                                        (const uint8_t *)gUbloxTestCaCertPem, (int32_t)(sizeof(gUbloxTestCaCertPem) - 1));
+    if (ret < 0) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "uCxSecurityCertificateUpload() failed: %" PRId32, ret);
+        allOk = false;
+    } else {
+        // Expected MD5s captured from a verified plain-HTTP run against this test rig.
+        static const DownloadFile_t https2Files[] = {
+            { "/1M.bin", 1000000, "c76a0bfd9ae2b473551b84ee599cf2b4" },
+            { "/10M.bin", 10000000, "c755e1548b8cdf9dbadc1832a00a78a6" },
+            { "/100M.bin", 100000000, "cdd86d85ed27a7d22d2cf141eb2483d8" },
+        };
+
+        // Plain-HTTP baseline on U_EXAMPLE_HTTPS2_PORT - reference speed for comparison
+        // against the TLS pass below (protocol used is logged by downloadOneFile()).
+        for (size_t i = 0; i < sizeof(https2Files) / sizeof(https2Files[0]); i++) {
+            if (!downloadOneFile(&ucxHandle, pClient, sessionId, U_EXAMPLE_HTTPS2_HOST, U_EXAMPLE_HTTPS2_PORT, NULL,
+                                  &https2Files[i])) {
+                allOk = false;
+            }
+        }
+
+        // Same rig, TLS-enabled listener on U_EXAMPLE_HTTPS2_TLS_PORT - real AT+UHTCTLS
+        // handshake against the uploaded CA cert.
+        for (size_t i = 0; i < sizeof(https2Files) / sizeof(https2Files[0]); i++) {
+            if (!downloadOneFile(&ucxHandle, pClient, sessionId, U_EXAMPLE_HTTPS2_TLS_HOST, U_EXAMPLE_HTTPS2_TLS_PORT,
+                                  U_EXAMPLE_HTTPS2_CA_NAME, &https2Files[i])) {
+                allOk = false;
+            }
+        }
+    }
+#endif
 
     // Reboot module to restore default UART settings
     uCxSystemReboot(&ucxHandle);

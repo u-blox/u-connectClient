@@ -23,6 +23,17 @@
 // #define U_EXAMPLE_HTTP_PATH "/uploads/firmware_app_load_mod/bct_468/bct_468_firmware_app_load_mod_2.05-alpha.fw"
 // #define U_EXAMPLE_HTTP_OUT_FILE "http_download.bin"
 
+/* HTTP example: optional second HTTPS target validated against a self-signed
+ * CA (uploaded via AT+USECUB - see examples/certs/ublox_test_ca.h). Disabled
+ * unless U_EXAMPLE_HTTPS2_HOST is defined. */
+// #define U_EXAMPLE_HTTPS2_HOST "https://your-test-server.example.com"
+// #define U_EXAMPLE_HTTPS2_PORT 8191
+// #define U_EXAMPLE_HTTPS2_PATH "/path/to/test/file"
+// #define U_EXAMPLE_HTTPS2_CA_NAME "caCert"
+// Optional TLS-enabled listener on the same rig (defaults to U_EXAMPLE_HTTPS2_HOST/8192):
+// #define U_EXAMPLE_HTTPS2_TLS_HOST "https://your-test-server.example.com"
+// #define U_EXAMPLE_HTTPS2_TLS_PORT 8192
+
 /* HTTP example: UART speed after handshake + CTS/RTS flow control.
  * Flow control requires RTS/CTS wiring (NOT available on the plain
  * PB6/PB7 Nucleo hookup). E.g. Windows FTDI setup: 3000000 + true. */

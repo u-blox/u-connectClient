@@ -46,6 +46,19 @@ extern int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient);
 #define U_PORT_FREERTOS_RX_TASK_PRIORITY      (configMAX_PRIORITIES - 2)
 #endif
 
+/* Some UART ports (e.g. STM32 circular-DMA ports: u_port_uart_stm32h7.c,
+ * u_port_uart_stm32f7.c, u_port_uart_stm32f4_dma.c) never call
+ * uPortUartRxSignalFromIsr() - they only get a DMA callback on a full
+ * ring-buffer wrap or on error. Without a bounded wait here, the RX task
+ * blocks forever after its one-time creation notify and silently stops
+ * processing any data (including URCs) that arrives with no AT command in
+ * flight; it would only get discovered as a side effect of the next
+ * synchronous command's blocking read. Poll periodically so URCs are always
+ * serviced, independent of whether the UART port signals the ISR event. */
+#ifndef U_PORT_FREERTOS_RX_POLL_INTERVAL_MS
+#define U_PORT_FREERTOS_RX_POLL_INTERVAL_MS   (10)
+#endif
+
 /* ----------------------------------------------------------------
  * TYPES
  * -------------------------------------------------------------- */
@@ -72,7 +85,7 @@ static void rxTask(void *pArg)
     uPortRxContext_t *pCtx = (uPortRxContext_t *)pArg;
 
     while (!pCtx->terminateRxTask) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(U_PORT_FREERTOS_RX_POLL_INTERVAL_MS));
         if (!pCtx->terminateRxTask) {
             uCxAtClientHandleRxAvailable(pCtx->pClient);
         }
