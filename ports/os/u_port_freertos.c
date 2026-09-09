@@ -46,6 +46,24 @@ extern int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient);
 #define U_PORT_FREERTOS_RX_TASK_PRIORITY      (configMAX_PRIORITIES - 2)
 #endif
 
+/* Some UART ports (e.g. STM32 circular-DMA ports: u_port_uart_stm32h7.c,
+ * u_port_uart_stm32f779.c) never call uPortUartRxSignalFromIsr() - they only
+ * get a DMA callback on a full ring-buffer wrap or on error. Without a bounded
+ * wait here, the RX task blocks forever after its one-time creation notify and
+ * silently stops processing any data (including URCs) that arrives with no AT
+ * command in flight. Poll periodically so URCs are always serviced, independent
+ * of whether the UART port signals the ISR event.
+ *
+ * NOTE: keep this interval LARGE. This RX task runs at high priority
+ * (configMAX_PRIORITIES - 2); a short interval (e.g. 10ms) preempts an active
+ * download's tight foreground read loop ~100x/s and fights it for cmdMutex,
+ * cutting throughput ~3.5x (1.25 Mbit/s -> 360 kbit/s on H7). Idle URCs like
+ * WiFi-connect are not latency-critical, so a coarse poll is fine and the
+ * foreground command path drains everything during an active transfer. */
+#ifndef U_PORT_FREERTOS_RX_POLL_INTERVAL_MS
+#define U_PORT_FREERTOS_RX_POLL_INTERVAL_MS   (200)
+#endif
+
 /* ----------------------------------------------------------------
  * TYPES
  * -------------------------------------------------------------- */
@@ -72,7 +90,7 @@ static void rxTask(void *pArg)
     uPortRxContext_t *pCtx = (uPortRxContext_t *)pArg;
 
     while (!pCtx->terminateRxTask) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(U_PORT_FREERTOS_RX_POLL_INTERVAL_MS));
         if (!pCtx->terminateRxTask) {
             uCxAtClientHandleRxAvailable(pCtx->pClient);
         }
