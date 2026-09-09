@@ -33,6 +33,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "stm32f7xx_hal.h"
 #include "u_port_uart.h"
@@ -59,6 +60,8 @@ typedef struct {
     volatile uint32_t rxTail;
     uint8_t rxByte;  // Single byte for interrupt RX
     bool isOpen;
+    volatile uint32_t errorCount;    // UART errors (overrun/framing/noise/parity)
+    volatile uint32_t overflowCount; // Ring buffer full - bytes dropped (reader too slow)
 } uPortUartHandle;
 
 /* ----------------------------------------------------------------
@@ -314,8 +317,12 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
             // Buffer not full
             gpUartHandle->rxBuffer[gpUartHandle->rxHead] = gpUartHandle->rxByte;
             gpUartHandle->rxHead = nextHead;
+        } else {
+            // Buffer full - reader too slow, byte silently lost otherwise.
+            gpUartHandle->overflowCount++;
+            printf("[UART] RX ring buffer full #%lu - byte dropped\r\n",
+                   (unsigned long)gpUartHandle->overflowCount);
         }
-        // If buffer full, drop the byte (could add overflow handling here)
 
         uPortUartRxSignalFromIsr();
 
@@ -352,5 +359,27 @@ void uPortUart_IRQHandler(void)
 {
     if (gpUartHandle != NULL) {
         HAL_UART_IRQHandler(&gpUartHandle->huart);
+    }
+}
+
+/**
+ * @brief UART error callback (overrun, framing, noise, parity)
+ *
+ * HAL_UART_Receive_IT() does NOT auto-recover from an error: on ORE/FE/NE/PE
+ * the HAL aborts the pending 1-byte receive and disables the RX interrupt,
+ * so without this callback re-arming it, a single transient error goes
+ * silently deaf forever (matches a "desync then nothing further" symptom on
+ * the wire, easily mistaken for higher-layer AT parser corruption).
+ */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (gpUartHandle != NULL && huart->Instance == gpUartHandle->huart.Instance) {
+        gpUartHandle->errorCount++;
+        printf("[UART] RX error #%lu ErrorCode=0x%02lX (ORE=%d FE=%d NE=%d PE=%d) - IT restarted\r\n",
+               (unsigned long)gpUartHandle->errorCount, (unsigned long)huart->ErrorCode,
+               (huart->ErrorCode & HAL_UART_ERROR_ORE) != 0, (huart->ErrorCode & HAL_UART_ERROR_FE) != 0,
+               (huart->ErrorCode & HAL_UART_ERROR_NE) != 0, (huart->ErrorCode & HAL_UART_ERROR_PE) != 0);
+        __HAL_UART_CLEAR_FLAG(huart, UART_CLEAR_OREF | UART_CLEAR_NEF | UART_CLEAR_FEF | UART_CLEAR_PEF);
+        startRxInterrupt(gpUartHandle);
     }
 }
