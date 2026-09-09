@@ -54,12 +54,11 @@ extern int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient);
  * command in flight. Poll periodically so URCs are always serviced, independent
  * of whether the UART port signals the ISR event.
  *
- * NOTE: keep this interval LARGE. This RX task runs at high priority
- * (configMAX_PRIORITIES - 2); a short interval (e.g. 10ms) preempts an active
- * download's tight foreground read loop ~100x/s and fights it for cmdMutex,
- * cutting throughput ~3.5x (1.25 Mbit/s -> 360 kbit/s on H7). Idle URCs like
- * WiFi-connect are not latency-critical, so a coarse poll is fine and the
- * foreground command path drains everything during an active transfer. */
+ * NOTE: this RX task runs at high priority (configMAX_PRIORITIES - 2). Keep the
+ * interval coarse so it doesn't preempt an active download's tight foreground
+ * read loop; 200ms wakes only ~5x/s and the foreground command path drains
+ * everything during an active transfer. Idle URCs (e.g. WiFi-connect) are not
+ * latency-critical. */
 #ifndef U_PORT_FREERTOS_RX_POLL_INTERVAL_MS
 #define U_PORT_FREERTOS_RX_POLL_INTERVAL_MS   (200)
 #endif
