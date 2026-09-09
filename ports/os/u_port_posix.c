@@ -31,6 +31,8 @@
 #include "u_cx_at_client.h"
 #include "u_cx_log.h"
 
+extern int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient);
+
 /* ----------------------------------------------------------------
  * TYPES
  * -------------------------------------------------------------- */
@@ -39,6 +41,7 @@ typedef struct {
     uCxAtClient_t *pClient;
     pthread_t rxThread;
     volatile bool terminateRxTask;
+    bool rxThreadCreated;
 } uPortRxContext_t;
 
 /* ----------------------------------------------------------------
@@ -81,10 +84,14 @@ static void *rxTask(void *pArg)
     uPortRxContext_t *pCtx = (uPortRxContext_t *)pArg;
 
     while (!pCtx->terminateRxTask) {
-        U_CX_PORT_SLEEP_MS(10);
-        if (uCxAtClientHandleRx(pCtx->pClient) < 0) {
-            printf("Error in RX handling thread\n");
-            exit(1);
+        int32_t waitResult = uPortUartWaitForData(pCtx->pClient->uartHandle, -1);
+        if (pCtx->terminateRxTask) {
+            break;
+        }
+        if ((waitResult < 0) ||
+            ((waitResult > 0) &&
+             (uCxAtClientHandleRxAvailable(pCtx->pClient) < 0))) {
+            U_CX_PORT_SLEEP_MS(100);
         }
     }
 
@@ -148,12 +155,17 @@ void uPortBgRxTaskCreate(uCxAtClient_t *pClient)
     pthread_attr_getschedparam(&attr, &param);
     param.sched_priority = 9;
     pthread_attr_setschedparam(&attr, &param);
-    pthread_create(&gRxContext.rxThread, &attr, rxTask, &gRxContext);
+    gRxContext.rxThreadCreated =
+        pthread_create(&gRxContext.rxThread, &attr, rxTask, &gRxContext) == 0;
+    pthread_attr_destroy(&attr);
 }
 
 void uPortBgRxTaskDestroy(uCxAtClient_t *pClient)
 {
-    (void)pClient;
     gRxContext.terminateRxTask = true;
-    pthread_join(gRxContext.rxThread, NULL);
+    if (gRxContext.rxThreadCreated) {
+        uPortUartWake(pClient->uartHandle);
+        pthread_join(gRxContext.rxThread, NULL);
+        gRxContext.rxThreadCreated = false;
+    }
 }

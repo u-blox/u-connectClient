@@ -79,6 +79,23 @@ static int32_t gNextInstance = 0;
  * STATIC FUNCTIONS
  * -------------------------------------------------------------- */
 
+static void resetReceiveState(uCxAtClient_t *pClient)
+{
+#if U_CX_USE_URC_QUEUE == 1
+    if (pClient->urcQueue.pEnqueueEntry != NULL) {
+        uCxAtUrcQueueEnqueueAbort(&pClient->urcQueue);
+    }
+#endif
+    pClient->rxBufferPos = 0;
+    pClient->urcBufferPos = 0;
+    pClient->pExpectedRsp = NULL;
+    pClient->pExpectedRspLen = 0;
+    pClient->pRspParams = NULL;
+    pClient->isBinaryRx = false;
+    memset(&pClient->binaryRx, 0, sizeof(pClient->binaryRx));
+    memset(&pClient->rspBinaryBuf, 0, sizeof(pClient->rspBinaryBuf));
+}
+
 // Helper function for setting up the RX binary transfer buffer
 static void setupBinaryRxBuffer(uCxAtClient_t *pClient, uCxAtBinaryState_t state,
                                 uint8_t *pBuffer, uint16_t bufferSize, uint16_t remainingBytes)
@@ -152,11 +169,7 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "URC queue full - dropping URC");
             }
 #else
-            const struct uCxAtClientConfig *pConfig = pClient->pConfig;
-            if (pClient->urcCallback) {
-                pClient->urcCallback(pClient, pClient->pUrcCallbackTag, pConfig->pRxBuffer,
-                                     pClient->rxBufferPos, NULL, 0);
-            }
+            ret = AT_PARSER_GOT_URC;
 #endif
         } else {
             // Received unexpected data
@@ -187,6 +200,15 @@ static int32_t parseIncomingChar(uCxAtClient_t *pClient, char ch)
             uCxAtUrcQueueEnqueueEnd(&pClient->urcQueue, 0);
             // Make sure we continue calling parseIncomingChar() as the
             // URC will be handled after the command has completed
+            ret = AT_PARSER_NOP;
+        }
+#else
+        if (ret == AT_PARSER_GOT_URC) {
+            const struct uCxAtClientConfig *pConfig = pClient->pConfig;
+            if (pClient->urcCallback) {
+                pClient->urcCallback(pClient, pClient->pUrcCallbackTag, pConfig->pRxBuffer,
+                                     strlen(pConfig->pRxBuffer), NULL, 0);
+            }
             ret = AT_PARSER_NOP;
         }
 #endif
@@ -229,7 +251,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
             // Place the binary data directly after the URC string
             uint8_t *pPtr = pConfig->pUrcBuffer;
             uint16_t len = uCxAtUrcQueueEnqueueGetPayloadPtr(&pClient->urcQueue, &pPtr);
-            if (len > binLength) {
+            if (len >= binLength) {
                 setupBinaryRxBuffer(pClient, U_CX_BIN_STATE_BINARY_URC, pPtr, len, binLength);
             } else {
                 // The binary data can't be fitted into the queue so we need to drop it
@@ -240,10 +262,10 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
 #else
             size_t bufPos = pClient->rxBufferPos;
             uint8_t *pPtr = pConfig->pRxBuffer;
-            size_t len = pConfig->rxBufferLen - bufPos;
-            if (len > binLength) {
+            size_t len = pConfig->rxBufferLen - bufPos - 1;
+            if (len >= binLength) {
                 setupBinaryRxBuffer(pClient, U_CX_BIN_STATE_BINARY_URC,
-                                    &pPtr[bufPos], len, binLength);
+                                    &pPtr[bufPos + 1], len, binLength);
             } else {
                 // The binary data can't be fitted into the queue so we need to drop it
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,  "Not enough space for URC binary data");
@@ -260,7 +282,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
     }
 }
 
-static int32_t handleBinaryRx(uCxAtClient_t *pClient)
+static int32_t handleBinaryRx(uCxAtClient_t *pClient, int32_t timeoutMs)
 {
     int32_t ret = AT_PARSER_NOP;
 
@@ -268,12 +290,11 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
     uCxAtBinaryRx_t *pBinRx = &pClient->binaryRx;
     int32_t readStatus;
 
-    static uint8_t lengthBuf[2];
     if (pBinRx->rxHeaderCount < 2) {
-        size_t readLen = sizeof(lengthBuf) - pBinRx->rxHeaderCount;
+        size_t readLen = sizeof(pBinRx->lengthBuf) - pBinRx->rxHeaderCount;
         readStatus = uPortUartRead(pClient->uartHandle,
-                                   &lengthBuf[pBinRx->rxHeaderCount], readLen,
-                                   pClient->pConfig->timeoutMs);
+                                   &pBinRx->lengthBuf[pBinRx->rxHeaderCount], readLen,
+                                   timeoutMs);
         CHECK_READ_ERROR(pClient, readStatus);
         if (readStatus > 0) {
             pBinRx->rxHeaderCount += (uint8_t)readStatus;
@@ -283,7 +304,8 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
         } else {
             // The two length bytes have now been received
             int32_t parse_code;
-            uint16_t length = (uint16_t)(lengthBuf[0] << 8) | lengthBuf[1];
+            uint16_t length = (uint16_t)(pBinRx->lengthBuf[0] << 8) |
+                              pBinRx->lengthBuf[1];
             char *pRxBuffer = (char *)pClient->pConfig->pRxBuffer;
             parse_code = parseLine(pClient, pRxBuffer, pClient->rxBufferPos);
             setupBinaryTransfer(pClient, parse_code, length);
@@ -298,7 +320,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
             size_t readLen = U_MIN(remainingBuf, pBinRx->remainingDataBytes);
             readStatus = uPortUartRead(pClient->uartHandle,
                                        &pBinRx->pBuffer[pBinRx->bufferPos], readLen,
-                                       pClient->pConfig->timeoutMs);
+                                       timeoutMs);
             CHECK_READ_ERROR(pClient, readStatus);
             if (readStatus > 0) {
                 pBinRx->bufferPos += (uint16_t)readStatus;
@@ -309,7 +331,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
             size_t readLen = U_MIN(sizeof(buf), pBinRx->remainingDataBytes);
             readStatus = uPortUartRead(pClient->uartHandle,
                                        &buf[0], readLen,
-                                       pClient->pConfig->timeoutMs);
+                                       timeoutMs);
             CHECK_READ_ERROR(pClient, readStatus);
         }
 
@@ -344,7 +366,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
                 const struct uCxAtClientConfig *pConfig = pClient->pConfig;
                 if (pClient->urcCallback) {
                     pClient->urcCallback(pClient, pClient->pUrcCallbackTag, pConfig->pRxBuffer,
-                                         pClient->rxBufferPos, pClient->binaryRx.pBuffer,
+                                         strlen(pConfig->pRxBuffer), pClient->binaryRx.pBuffer,
                                          pClient->binaryRx.bufferPos);
                 }
 #endif
@@ -358,7 +380,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
     return ret;
 }
 
-static int32_t handleRxData(uCxAtClient_t *pClient)
+static int32_t handleRxData(uCxAtClient_t *pClient, int32_t timeoutMs)
 {
     int32_t ret = AT_PARSER_NOP;
 
@@ -370,7 +392,7 @@ static int32_t handleRxData(uCxAtClient_t *pClient)
             do {
                 char ch;
                 readStatus = uPortUartRead(pClient->uartHandle, &ch, 1,
-                                           pClient->pConfig->timeoutMs);
+                                           timeoutMs);
                 CHECK_READ_ERROR(pClient, readStatus);
                 if (readStatus != 1) {
                     break;
@@ -378,7 +400,7 @@ static int32_t handleRxData(uCxAtClient_t *pClient)
                 ret = parseIncomingChar(pClient, ch);
             } while (ret == AT_PARSER_NOP);
         } else {
-            ret = handleBinaryRx(pClient);
+            ret = handleBinaryRx(pClient, timeoutMs);
         }
 
         if (ret == AT_PARSER_START_BINARY) {
@@ -429,7 +451,7 @@ static void cmdBeginF(uCxAtClient_t *pClient, const char *pCmd, const char *pPar
 static int32_t cmdEnd(uCxAtClient_t *pClient)
 {
     while (pClient->status == NO_STATUS) {
-        handleRxData(pClient);
+        handleRxData(pClient, pClient->pConfig->timeoutMs);
 
         int32_t now = U_CX_PORT_GET_TIME_MS();
         if ((now - pClient->cmdStartTime) > pClient->cmdTimeout) {
@@ -484,15 +506,13 @@ void uCxAtClientInit(const uCxAtClientConfig_t *pConfig, uCxAtClient_t *pClient)
     uCxAtUrcQueueInit(&pClient->urcQueue, pConfig->pUrcBuffer, pConfig->urcBufferLen);
 #endif
     U_CX_MUTEX_CREATE(pClient->cmdMutex);
-
-    // Start background RX task (if implemented by port layer)
-    uPortBgRxTaskCreate(pClient);
 }
 
 void uCxAtClientDeinit(uCxAtClient_t *pClient)
 {
-    // Stop background RX task (if implemented by port layer)
-    uPortBgRxTaskDestroy(pClient);
+    if (pClient->opened) {
+        uCxAtClientClose(pClient);
+    }
 
 #if U_CX_USE_URC_QUEUE == 1
     uCxAtUrcQueueDeInit(&pClient->urcQueue);
@@ -503,23 +523,31 @@ void uCxAtClientDeinit(uCxAtClient_t *pClient)
 int32_t uCxAtClientOpen(uCxAtClient_t *pClient, int32_t baudRate, bool flowControl)
 {
     const struct uCxAtClientConfig *pConfig = pClient->pConfig;
+    int32_t ret = 0;
+
+    U_CX_MUTEX_LOCK(pClient->cmdMutex);
 
     if (pClient->opened) {
         // Already opened
-        return U_CX_ERROR_ALREADY_EXISTS;
+        ret = U_CX_ERROR_ALREADY_EXISTS;
+    } else if (pConfig->pUartDevName == NULL) {
+        ret = U_CX_ERROR_INVALID_PARAMETER;
+    } else {
+        pClient->uartHandle = uPortUartOpen(pConfig->pUartDevName, baudRate,
+                                            flowControl);
+        if (pClient->uartHandle == NULL) {
+            ret = U_CX_ERROR_IO;
+        } else {
+            resetReceiveState(pClient);
+            pClient->opened = true;
+        }
     }
 
-    if (pConfig->pUartDevName == NULL) {
-        return U_CX_ERROR_INVALID_PARAMETER;
+    U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
+    if (ret == 0) {
+        uPortBgRxTaskCreate(pClient);
     }
-
-    pClient->uartHandle = uPortUartOpen(pConfig->pUartDevName, baudRate, flowControl);
-    if (pClient->uartHandle == NULL) {
-        return U_CX_ERROR_IO;
-    }
-
-    pClient->opened = true;
-    return 0;
+    return ret;
 }
 
 void uCxAtClientClose(uCxAtClient_t *pClient)
@@ -528,12 +556,19 @@ void uCxAtClientClose(uCxAtClient_t *pClient)
         return;
     }
 
+    // Stop RX before releasing its UART handle.
+    uPortBgRxTaskDestroy(pClient);
+
+    U_CX_MUTEX_LOCK(pClient->cmdMutex);
+
+    pClient->opened = false;
+    resetReceiveState(pClient);
     if (pClient->uartHandle != NULL) {
         uPortUartClose(pClient->uartHandle);
         pClient->uartHandle = NULL;
     }
 
-    pClient->opened = false;
+    U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
 }
 
 void uCxAtClientSetUrcCallback(uCxAtClient_t *pClient, uUrcCallback_t urcCallback, void *pTag)
@@ -726,7 +761,7 @@ char *uCxAtClientCmdGetRspParamLine(uCxAtClient_t *pClient, const char *pExpecte
     }
 
     while (pClient->status == NO_STATUS) {
-        if (handleRxData(pClient) == AT_PARSER_GOT_RSP) {
+        if (handleRxData(pClient, pClient->pConfig->timeoutMs) == AT_PARSER_GOT_RSP) {
             pRet = pClient->pRspParams;
             break;
         }
@@ -763,29 +798,43 @@ int32_t uCxAtClientCmdEnd(uCxAtClient_t *pClient)
     return cmdEnd(pClient);
 }
 
-int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
+static int32_t handleRx(uCxAtClient_t *pClient, int32_t timeoutMs)
 {
-    if (!pClient->opened) {
-        return 0;
-    }
-
     int32_t ret = 0;
+#if U_CX_USE_URC_QUEUE == 1
+    bool processQueuedUrcs;
+#endif
     U_CX_MUTEX_LOCK(pClient->cmdMutex);
 
-    if (!pClient->executingCmd) {
-        int32_t parserRet = handleRxData(pClient);
+    if (pClient->opened && !pClient->executingCmd) {
+        int32_t parserRet = handleRxData(pClient, timeoutMs);
         if (parserRet == AT_PARSER_ERROR && pClient->status == U_CX_ERROR_IO) {
             ret = pClient->lastIoError;
         }
     }
 
+#if U_CX_USE_URC_QUEUE == 1
+    processQueuedUrcs = !pClient->isBinaryRx;
+#endif
     U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
 
 #if U_CX_USE_URC_QUEUE == 1
-    processUrcs(pClient);
+    if (processQueuedUrcs) {
+        processUrcs(pClient);
+    }
 #endif
 
     return ret;
+}
+
+int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
+{
+    return handleRx(pClient, pClient->pConfig->timeoutMs);
+}
+
+int32_t uCxAtClientHandleRxAvailable(uCxAtClient_t *pClient)
+{
+    return handleRx(pClient, 0);
 }
 
 int32_t uCxAtClientGetLastIoError(uCxAtClient_t *pClient)

@@ -27,6 +27,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -68,7 +69,7 @@ static uPortUartHandle *gpUartHandle = NULL;
  * -------------------------------------------------------------- */
 
 static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle);
-static void startRxInterrupt(uPortUartHandle *pHandle);
+static bool startRxInterrupt(uPortUartHandle *pHandle);
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
@@ -86,9 +87,9 @@ static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle)
     }
 }
 
-static void startRxInterrupt(uPortUartHandle *pHandle)
+static bool startRxInterrupt(uPortUartHandle *pHandle)
 {
-    HAL_UART_Receive_IT(&pHandle->huart, &pHandle->rxByte, 1);
+    return HAL_UART_Receive_IT(&pHandle->huart, &pHandle->rxByte, 1) == HAL_OK;
 }
 
 /* ----------------------------------------------------------------
@@ -131,6 +132,7 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     pHandle->huart.Init.OverSampling = UART_OVERSAMPLING_16;
 
     if (HAL_UART_Init(&pHandle->huart) != HAL_OK) {
+        U_PORT_UART_CLK_DISABLE();
         free(pHandle);
         return NULL;
     }
@@ -145,7 +147,10 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     gpUartHandle = pHandle;
 
     // Start receiving
-    startRxInterrupt(pHandle);
+    if (!startRxInterrupt(pHandle)) {
+        uPortUartClose((uPortUartHandle_t)pHandle);
+        return NULL;
+    }
 
     return (uPortUartHandle_t)pHandle;
 }
@@ -174,7 +179,8 @@ int32_t uPortUartWrite(uPortUartHandle_t handle,
                        const void *pData,
                        size_t length)
 {
-    if ((handle == NULL) || (pData == NULL) || (length == 0)) {
+    if ((handle == NULL) || (pData == NULL) || (length == 0) ||
+        (length > INT32_MAX)) {
         return -1;
     }
 
@@ -184,10 +190,19 @@ int32_t uPortUartWrite(uPortUartHandle_t handle,
         return -1;
     }
 
-    HAL_StatusTypeDef status = HAL_UART_Transmit(&pHandle->huart, (uint8_t *)pData, (uint16_t)length, HAL_MAX_DELAY);
+    const uint8_t *pBytes = (const uint8_t *)pData;
+    size_t bytesWritten = 0;
+    while (bytesWritten < length) {
+        size_t bytesRemaining = length - bytesWritten;
+        uint16_t chunkLength = bytesRemaining > UINT16_MAX ?
+                               UINT16_MAX : (uint16_t)bytesRemaining;
 
-    if (status != HAL_OK) {
-        return -1;
+        if (HAL_UART_Transmit(&pHandle->huart,
+                              (uint8_t *)(pBytes + bytesWritten),
+                              chunkLength, HAL_MAX_DELAY) != HAL_OK) {
+            return -1;
+        }
+        bytesWritten += chunkLength;
     }
 
     return (int32_t)length;
@@ -223,12 +238,13 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
         return 0;
     }
 
-    // Wait for data if blocking
-    if (timeoutMs > 0 && available == 0) {
+    // Wait for data if blocking or using a positive timeout
+    if ((timeoutMs != 0) && (available == 0)) {
         uint32_t startTime = HAL_GetTick();
         while (available == 0) {
             available = getRxBufferAvailable(pHandle);
-            if ((HAL_GetTick() - startTime) >= (uint32_t)timeoutMs) {
+            if ((timeoutMs > 0) &&
+                ((HAL_GetTick() - startTime) >= (uint32_t)timeoutMs)) {
                 return 0;  // Timeout
             }
         }
@@ -272,8 +288,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         }
         // If buffer full, drop the byte (could add overflow handling here)
 
+        uPortUartRxSignalFromIsr();
+
         // Restart reception
-        startRxInterrupt(gpUartHandle);
+        (void)startRxInterrupt(gpUartHandle);
     }
 }
 

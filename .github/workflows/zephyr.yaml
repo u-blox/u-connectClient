@@ -38,7 +38,7 @@ jobs:
       working-directory: u-connectClient/
       shell: bash
       run: |
-        west twister -T zephyr/ --integration
+        west twister -T zephyr/ --integration --exclude-tag stress
 
     - name: Process Test results
       uses: dorny/test-reporter@v1

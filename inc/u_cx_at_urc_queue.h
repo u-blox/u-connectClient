@@ -49,7 +49,13 @@ typedef struct {
 typedef struct uCxAtUrcQueue {
     uint8_t *pBuffer;
     size_t bufferLen;
-    size_t bufferPos;
+    size_t startPos;
+    size_t readPos;
+    size_t writePos;
+    size_t usedBytes;
+    size_t wrapPos;
+    size_t enqueueCapacity;
+    bool isWrapped;
     U_CX_MUTEX_HANDLE queueMutex;
     U_CX_MUTEX_HANDLE dequeueMutex;
     uUrcEntry_t *pEnqueueEntry;
