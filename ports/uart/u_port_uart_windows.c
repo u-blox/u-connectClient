@@ -220,6 +220,12 @@ static HANDLE openComPort(const char *pDevName, int baudRate, bool useFlowContro
         return INVALID_HANDLE_VALUE;
     }
 
+    if (!SetCommMask(hComPort, EV_RXCHAR)) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "SetCommMask failed");
+        CloseHandle(hComPort);
+        return INVALID_HANDLE_VALUE;
+    }
+
     // Purge any existing data
     PurgeComm(hComPort, PURGE_RXCLEAR | PURGE_TXCLEAR);
 
@@ -261,14 +267,22 @@ int32_t uPortUartRead(uPortUartHandle_t handle, void *pData, size_t length, int3
         return -1;
     }
 
-    // timeoutMs is not used per-call on Windows — the COM port timeout
-    // is set once at open time (1ms for event-driven, 100ms for polled).
-    // If per-call timeout control is needed in the future, SetCommTimeouts
-    // would need to be called here before ReadFile.
-    (void)timeoutMs;
-
     if (pData == NULL) {
         return 0;
+    }
+
+    if (timeoutMs == 0) {
+        COMSTAT status;
+        DWORD errors;
+        if (!ClearCommError(pHandle->hComPort, &errors, &status)) {
+            return -1;
+        }
+        if (status.cbInQue == 0) {
+            return 0;
+        }
+        if (length > status.cbInQue) {
+            length = status.cbInQue;
+        }
     }
 
     if (!ReadFile(pHandle->hComPort, pData, (DWORD)length, &dwBytesRead, NULL)) {
@@ -276,6 +290,29 @@ int32_t uPortUartRead(uPortUartHandle_t handle, void *pData, size_t length, int3
     }
 
     return (int32_t)dwBytesRead;
+}
+
+int32_t uPortUartWaitForData(uPortUartHandle_t handle, int32_t timeoutMs)
+{
+    uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+    DWORD eventMask = 0;
+
+    (void)timeoutMs;
+    if (pHandle == NULL) {
+        return -1;
+    }
+    if (WaitCommEvent(pHandle->hComPort, &eventMask, NULL)) {
+        return (eventMask & EV_RXCHAR) != 0 ? 1 : 0;
+    }
+    return GetLastError() == ERROR_OPERATION_ABORTED ? 0 : -1;
+}
+
+void uPortUartWake(uPortUartHandle_t handle)
+{
+    uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+    if (pHandle != NULL) {
+        CancelIoEx(pHandle->hComPort, NULL);
+    }
 }
 
 uPortUartHandle_t uPortUartOpen(const char *pDevName, int32_t baudRate, bool useFlowControl)
