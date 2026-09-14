@@ -19,6 +19,8 @@ endif()
 
 if(STM32_BOARD STREQUAL "nucleo_h753zi")
     include(${CMAKE_CURRENT_LIST_DIR}/stm32h753zi.cmake)
+elseif(STM32_BOARD STREQUAL "nucleo_f767zi")
+    include(${CMAKE_CURRENT_LIST_DIR}/stm32f767zi.cmake)
 elseif(STM32_BOARD STREQUAL "nucleo_f439zi")
     include(${CMAKE_CURRENT_LIST_DIR}/stm32f439zi.cmake)
 else()
@@ -74,6 +76,24 @@ if(STM32_FAMILY_SHORT STREQUAL "H7")
             ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32h7.c
         )
     endif()
+elseif(STM32_FAMILY_SHORT STREQUAL "F7")
+    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32f7)
+
+    set(STM32_COMMON_SRC
+        ${STM32_PORT_EXTRA_DIR}/src/system_stm32f7xx.c
+        ${STM32_PORT_EXTRA_DIR}/src/stm32f7xx_it.c
+        ${STM32_PORT_EXTRA_DIR}/src/stm32f7xx_hal_timebase_tim.c
+        ${STM32_PORT_EXTRA_DIR}/src/sysmem.c
+        ${STM32_PORT_EXTRA_DIR}/src/syscalls.c
+        ${STM32_STARTUP_FILE}
+        ${STM32_HAL_SOURCES}
+        ${FREERTOS_SOURCES}
+    )
+
+    set(STM32_PORT_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32f7.c
+    )
 else()
     set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32f4)
 
@@ -116,7 +136,7 @@ endif()
 
 # STM32 compile definitions
 # WiFi credentials (U_EXAMPLE_SSID, U_EXAMPLE_WPA_PSK) come from config.local.h
-if(STM32_FAMILY_SHORT STREQUAL "H7")
+if(STM32_FAMILY_SHORT STREQUAL "H7" OR STM32_FAMILY_SHORT STREQUAL "F7")
     set(STM32_EXAMPLE_UART "USART1")
 else()
     set(STM32_EXAMPLE_UART "USART3")

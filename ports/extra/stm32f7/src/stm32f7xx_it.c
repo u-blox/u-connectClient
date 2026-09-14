@@ -17,6 +17,12 @@
 /* FreeRTOS port layer - needed for xPortSysTickHandler */
 extern void xPortSysTickHandler(void);
 
+/* ucxclient UART port handlers (u_port_uart_stm32f7.c) */
+extern void uPortUart_IRQHandler(void);
+extern void uPortUartDma_IRQHandler(void);
+/* Console UART RX handler (main_stm32.c) */
+extern void exampleConsoleUart_IRQHandler(void);
+
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
 /* Private macro -------------------------------------------------------------*/
@@ -107,4 +113,36 @@ void SysTick_Handler(void)
 #if (INCLUDE_xTaskGetSchedulerState == 1)
     }
 #endif
+}
+
+/******************************************************************************/
+/*                 STM32F7xx Peripherals Interrupt Handlers                   */
+/******************************************************************************/
+
+/**
+  * @brief This function handles USART1 global interrupt (u-blox module).
+  */
+void USART1_IRQHandler(void)
+{
+  uPortUart_IRQHandler();
+}
+
+/**
+  * @brief This function handles DMA2 Stream 2 global interrupt (USART1 RX DMA).
+  */
+void DMA2_Stream2_IRQHandler(void)
+{
+  uPortUartDma_IRQHandler();
+}
+
+/**
+  * @brief This function handles USART3 global interrupt (console/ST-LINK VCP).
+  *
+  * Feeds the interrupt-driven RX ring buffer in main_stm32.c so
+  * exampleConsoleUartRead() never overruns during sustained/binary transfers
+  * (e.g. XMODEM via uart_bridge_example).
+  */
+void USART3_IRQHandler(void)
+{
+  exampleConsoleUart_IRQHandler();
 }
