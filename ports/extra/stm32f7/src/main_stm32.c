@@ -44,8 +44,42 @@ static void ucx_task(void *pvParameters)
     vTaskDelete(NULL);
 }
 
+/* Toggle: enable CPU I/D cache (as CubeMX does by default on M7). When ON, the
+ * DMA RX buffer (gUcxRxDmaBuffer) is marked non-cacheable via the MPU below, so
+ * D-cache is safe with no cache maintenance in the read path. 0 = caches off. */
+#define UCX_ENABLE_DCACHE 0
+
+#if UCX_ENABLE_DCACHE
+/* Mark the DMA RX ring buffer region non-cacheable so the CPU bypasses the cache
+ * for DMA-written data - the correct M7 pattern (no invalidate/coherency hazard). */
+extern uint8_t gUcxRxDmaBuffer[];
+static void MPU_ConfigDmaNonCacheable(void)
+{
+    MPU_Region_InitTypeDef mpu = {0};
+    HAL_MPU_Disable();
+    mpu.Enable           = MPU_REGION_ENABLE;
+    mpu.Number           = MPU_REGION_NUMBER0;
+    mpu.BaseAddress      = (uint32_t)gUcxRxDmaBuffer;
+    mpu.Size             = MPU_REGION_SIZE_8KB;   /* == U_PORT_UART_RX_BUFFER_SIZE (8192) */
+    mpu.SubRegionDisable = 0x00;
+    mpu.TypeExtField     = MPU_TEX_LEVEL1;        /* TEX=1,C=0,B=0 = Normal non-cacheable */
+    mpu.AccessPermission = MPU_REGION_FULL_ACCESS;
+    mpu.DisableExec      = MPU_INSTRUCTION_ACCESS_DISABLE;
+    mpu.IsShareable      = MPU_ACCESS_SHAREABLE;
+    mpu.IsCacheable      = MPU_ACCESS_NOT_CACHEABLE;
+    mpu.IsBufferable     = MPU_ACCESS_NOT_BUFFERABLE;
+    HAL_MPU_ConfigRegion(&mpu);
+    HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
+}
+#endif
+
 int main(void)
 {
+#if UCX_ENABLE_DCACHE
+    MPU_ConfigDmaNonCacheable();
+    SCB_EnableICache();
+    SCB_EnableDCache();
+#endif
     /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
     HAL_Init();
 

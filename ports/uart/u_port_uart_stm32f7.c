@@ -61,7 +61,6 @@
 typedef struct {
     UART_HandleTypeDef huart;
     DMA_HandleTypeDef hdmaRx;
-    uint8_t rxBuffer[U_PORT_UART_RX_BUFFER_SIZE];
     uint32_t rxTotalRead;            // Total bytes consumed by reader (mod 2^32)
     volatile uint32_t rxWraps;       // DMA buffer wrap count (incremented in ISR)
     volatile bool rxResync;          // Set by error callback, handled by reader
@@ -73,6 +72,13 @@ typedef struct {
 /* ----------------------------------------------------------------
  * STATIC VARIABLES
  * -------------------------------------------------------------- */
+
+/* DMA RX ring buffer. Kept OUT of the malloc'd handle and at a fixed,
+ * size-aligned address so an MPU region can mark it non-cacheable when the
+ * D-cache is enabled - avoids DMA/CPU coherency issues with no cache
+ * maintenance in the read path. */
+uint8_t gUcxRxDmaBuffer[U_PORT_UART_RX_BUFFER_SIZE]
+    __attribute__((aligned(U_PORT_UART_RX_BUFFER_SIZE)));
 
 static uPortUartHandle *gpUartHandle = NULL;
 
@@ -148,7 +154,7 @@ static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle)
 static void startRxDma(uPortUartHandle *pHandle)
 {
     pHandle->rxWraps = 0;
-    HAL_UART_Receive_DMA(&pHandle->huart, pHandle->rxBuffer,
+    HAL_UART_Receive_DMA(&pHandle->huart, gUcxRxDmaBuffer,
                          U_PORT_UART_RX_BUFFER_SIZE);
 }
 
@@ -329,9 +335,9 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
     if (firstChunk > bytesToRead) {
         firstChunk = bytesToRead;
     }
-    memcpy(pData, &pHandle->rxBuffer[tailIdx], firstChunk);
+    memcpy(pData, &gUcxRxDmaBuffer[tailIdx], firstChunk);
     if (bytesToRead > firstChunk) {
-        memcpy((uint8_t *)pData + firstChunk, &pHandle->rxBuffer[0],
+        memcpy((uint8_t *)pData + firstChunk, &gUcxRxDmaBuffer[0],
                bytesToRead - firstChunk);
     }
 
