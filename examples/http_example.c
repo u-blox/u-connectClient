@@ -242,6 +242,9 @@ static void formatDuration(int32_t ms, char *pBuf, size_t bufLen)
     }
 }
 
+/* Set to 1 to print a per-file timing split (uCxHttpGetBody vs host post-proc). */
+#define HTTP_PROFILE_TIMING 0
+
 /* Discard leftover bytes in the UART RX buffer to resynchronize the AT parser.
  * After an aborted/incomplete download the module may still have unread HTTP
  * body bytes buffered (or trickling in); left in place they desync the AT
@@ -351,11 +354,20 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
     int32_t stallHits = 0;    // times we had to poll-wait for more body data (diagnostic)
     int32_t pollTimeMs = 0;   // cumulative time spent in the poll-wait sleep (diagnostic)
     int32_t readCalls = 0;    // number of uCxHttpGetBody() calls that returned data (diagnostic)
+#if HTTP_PROFILE_TIMING
+    int32_t getBodyMs = 0;    // cumulative time inside uCxHttpGetBody() (AT round-trip)
+#endif
     int32_t lastProgressMs = 0;
     int32_t lastProgressBytes = 0;
     int32_t startTimeMs = uPortGetTickTimeMs();
     while (true) {
+#if HTTP_PROFILE_TIMING
+        int32_t gbT0 = uPortGetTickTimeMs();
+#endif
         ret = uCxHttpGetBody(pUcxHandle, sessionId, sizeof(rxData), rxData, &moreToRead);
+#if HTTP_PROFILE_TIMING
+        getBodyMs += uPortGetTickTimeMs() - gbT0;
+#endif
         if (ret < 0) {
             U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "uCxHttpGetBody() failed: %" PRId32, ret);
             break;
@@ -430,6 +442,11 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
            totalTimeBuf, totalBytes, stallHits, pollTimeMs, (100.0 * (double)pollTimeMs) / (double)elapsedMs);
     printf("Read calls: %" PRId32 ", avg %.1f bytes/call (cap %zu)\n",
            readCalls, readCalls > 0 ? (double)totalBytes / (double)readCalls : 0.0, sizeof(rxData));
+#if HTTP_PROFILE_TIMING
+    printf("Timing: in uCxHttpGetBody %" PRId32 " ms (%.1f%%), host post-proc %" PRId32 " ms (%.1f%%)\n",
+           getBodyMs, (100.0 * (double)getBodyMs) / (double)elapsedMs,
+           elapsedMs - getBodyMs, (100.0 * (double)(elapsedMs - getBodyMs)) / (double)elapsedMs);
+#endif
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance,
                     "Downloaded %" PRId32 " of %" PRId32 " bytes to %s in %" PRId32 " ms",
                     totalBytes, contentLength, pOutFile, elapsedMs);
