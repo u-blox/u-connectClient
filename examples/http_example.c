@@ -242,6 +242,21 @@ static void formatDuration(int32_t ms, char *pBuf, size_t bufLen)
     }
 }
 
+/* Discard leftover bytes in the UART RX buffer to resynchronize the AT parser.
+ * After an aborted/incomplete download the module may still have unread HTTP
+ * body bytes buffered (or trickling in); left in place they desync the AT
+ * parser for the next command (seen as "Command timeout" / "Unexpected data" /
+ * uCxHttpGetBody() -65536). Flush repeatedly over a short bounded window so
+ * bytes still arriving from the module are cleared too. */
+static void drainUartRx(uCxAtClient_t *pClient)
+{
+    for (int i = 0; i < 25; i++) {   // ~500 ms bounded
+        uPortUartFlushRx(pClient->uartHandle);
+        U_CX_PORT_SLEEP_MS(20);
+    }
+    uPortUartFlushRx(pClient->uartHandle);
+}
+
 /* Download one file over the given HTTP(S) session, verifying its size and
  * (on hosts with a filesystem) its MD5 hash. Returns true on success.
  * pCaName != NULL enables TLS with that uploaded CA (AT+UHTCTLS); pCaName ==
@@ -439,7 +454,17 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
         printf("MD5: %s (no expected value set)\n", digestHex);
     }
 
+    // On an incomplete/failed transfer the module may still hold unread body
+    // bytes that would desync the AT parser for the disconnect and the next
+    // file. Flush the leftovers, disconnect (so the module stops streaming),
+    // then flush any residue so the next download starts from a clean slate.
+    if (!ok) {
+        drainUartRx(pClient);
+    }
     uCxHttpDisconnect(pUcxHandle, sessionId);
+    if (!ok) {
+        drainUartRx(pClient);
+    }
     return ok;
 }
 
