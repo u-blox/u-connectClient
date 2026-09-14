@@ -220,30 +220,30 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-    if (huart->Instance == USART1)
+    if (huart->Instance == USART6)
     {
-        /* USART1 GPIO Configuration on NUCLEO-F767ZI:
-         * PB6: USART1_TX (Arduino D1)
-         * PB7: USART1_RX (Arduino D0)
+        /* USART6 GPIO Configuration on NUCLEO-F767ZI (CN10 Arduino header):
+         * PG14: USART6_TX (Arduino D1)
+         * PG9:  USART6_RX (Arduino D0)
+         * Verified against ST STM32F767ZITx.xml (D0=PG_9, D1=PG_14, AF8).
          */
-        __HAL_RCC_GPIOB_CLK_ENABLE();
-        __HAL_RCC_USART1_CLK_ENABLE();
+        __HAL_RCC_GPIOG_CLK_ENABLE();
+        __HAL_RCC_USART6_CLK_ENABLE();
 
-        GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7;
+        GPIO_InitStruct.Pin = GPIO_PIN_9 | GPIO_PIN_14;
         GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
         GPIO_InitStruct.Pull = GPIO_NOPULL;
         GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-        GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
-        HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+        GPIO_InitStruct.Alternate = GPIO_AF8_USART6;
+        HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
 
         /* Configure CTS/RTS if hardware flow control is enabled
-         * (USART1 CTS = PA11, RTS = PA12) */
+         * (USART6 CTS = PG13, RTS = PG8, AF8) */
         if (huart->Init.HwFlowCtl == UART_HWCONTROL_RTS_CTS)
         {
-            __HAL_RCC_GPIOA_CLK_ENABLE();
-            GPIO_InitStruct.Pin = GPIO_PIN_11 | GPIO_PIN_12;
-            GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
-            HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+            GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_13;
+            GPIO_InitStruct.Alternate = GPIO_AF8_USART6;
+            HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
         }
     }
     else if (huart->Instance == USART3)

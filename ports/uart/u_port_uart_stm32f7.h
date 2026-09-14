@@ -22,10 +22,14 @@
  *
  * UART Configuration:
  * -------------------
- * USART1 (u-blox NORA-W36 module communication):
- *   - PB6: TX (Arduino D1)
- *   - PB7: RX (Arduino D0)
+ * USART6 (u-blox NORA-W36 module communication):
+ *   - PG14: TX (Arduino D1)
+ *   - PG9:  RX (Arduino D0)
  *   - Baud: Configurable (2 Mbaud typical, no flow control)
+ *
+ * NOTE: On the NUCLEO-F767ZI the Arduino/Zio CN10 D0/D1 header pins map to
+ * PG9/PG14 = USART6 (AF8) - NOT PB6/PB7 like the H7 board. Verified against
+ * ST STM32F767ZITx.xml (ARDUINO_UNO_D0=PG_9, ARDUINO_UNO_D1=PG_14).
  *
  * USART3 (Console/Debug):
  *   - PD8: TX, PD9: RX (ST-LINK VCP)
@@ -45,18 +49,18 @@ extern "C" {
  * -------------------------------------------------------------- */
 
 /**
- * UART instance for u-blox module communication (USART1 PB6/PB7).
+ * UART instance for u-blox module communication (USART6 PG9/PG14 = CN10 D0/D1).
  */
-#define U_PORT_UART_INSTANCE    USART1
-#define U_PORT_UART_IRQn        USART1_IRQn
-#define U_PORT_UART_IRQHandler  USART1_IRQHandler
-#define U_PORT_UART_CLK_ENABLE  __HAL_RCC_USART1_CLK_ENABLE
-#define U_PORT_UART_CLK_DISABLE __HAL_RCC_USART1_CLK_DISABLE
+#define U_PORT_UART_INSTANCE    USART6
+#define U_PORT_UART_IRQn        USART6_IRQn
+#define U_PORT_UART_IRQHandler  USART6_IRQHandler
+#define U_PORT_UART_CLK_ENABLE  __HAL_RCC_USART6_CLK_ENABLE
+#define U_PORT_UART_CLK_DISABLE __HAL_RCC_USART6_CLK_DISABLE
 
 /**
  * RX DMA configuration. Unlike the H7 (which routes any stream to any
  * peripheral via DMAMUX), STM32F7 uses fixed stream/channel mapping:
- * USART1_RX is DMA2 Stream 2, Channel 4 (RM0410 DMA2 request table).
+ * USART6_RX is DMA2 Stream 1, Channel 5 (RM0410 DMA2 request table).
  * RX uses circular DMA into a ring buffer so that no per-byte interrupts
  * are needed - required for reliable operation at high baud rates (2 Mbaud+).
  *
@@ -65,10 +69,10 @@ extern "C" {
  * SRAM1/SRAM2 region (0x20020000+) which DMA2 can reach.
  */
 #define U_PORT_UART_DMA_CLK_ENABLE    __HAL_RCC_DMA2_CLK_ENABLE
-#define U_PORT_UART_RX_DMA_STREAM     DMA2_Stream2
-#define U_PORT_UART_RX_DMA_CHANNEL    DMA_CHANNEL_4
-#define U_PORT_UART_RX_DMA_IRQn       DMA2_Stream2_IRQn
-#define U_PORT_UART_RX_DMA_IRQHandler DMA2_Stream2_IRQHandler
+#define U_PORT_UART_RX_DMA_STREAM     DMA2_Stream1
+#define U_PORT_UART_RX_DMA_CHANNEL    DMA_CHANNEL_5
+#define U_PORT_UART_RX_DMA_IRQn       DMA2_Stream1_IRQn
+#define U_PORT_UART_RX_DMA_IRQHandler DMA2_Stream1_IRQHandler
 
 #ifdef __cplusplus
 }

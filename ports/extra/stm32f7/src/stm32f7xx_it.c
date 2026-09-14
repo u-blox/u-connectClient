@@ -120,17 +120,17 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief This function handles USART1 global interrupt (u-blox module).
+  * @brief This function handles USART6 global interrupt (u-blox module, CN10 D0/D1).
   */
-void USART1_IRQHandler(void)
+void USART6_IRQHandler(void)
 {
   uPortUart_IRQHandler();
 }
 
 /**
-  * @brief This function handles DMA2 Stream 2 global interrupt (USART1 RX DMA).
+  * @brief This function handles DMA2 Stream 1 global interrupt (USART6 RX DMA).
   */
-void DMA2_Stream2_IRQHandler(void)
+void DMA2_Stream1_IRQHandler(void)
 {
   uPortUartDma_IRQHandler();
 }

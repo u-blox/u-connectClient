@@ -28,9 +28,9 @@
  * - No UART Init.ClockPrescaler field (H7/G0-only)
  * - Ring buffer must live in DMA-reachable SRAM (not DTCM)
  *
- * GPIO (USART1 PB6/PB7 AF7) and the USART1/DMA IRQ routing are configured by
- * the board layer (ports/extra/stm32f7/src/main_stm32.c + stm32f7xx_it.c),
- * exactly like the H7 port.
+ * GPIO (USART6 PG9/PG14 AF8 = CN10 D0/D1) and the USART6/DMA IRQ routing are
+ * configured by the board layer (ports/extra/stm32f7/src/main_stm32.c +
+ * stm32f7xx_it.c), exactly like the H7 port.
  */
 
 #include <stdint.h>
@@ -389,7 +389,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
  * This function must be called from your UART IRQ handler in your
  * main application code (e.g., in stm32f7xx_it.c):
  *
- * void USART1_IRQHandler(void)
+ * void USART6_IRQHandler(void)
  * {
  *     uPortUart_IRQHandler();
  * }

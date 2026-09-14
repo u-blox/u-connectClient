@@ -22,12 +22,16 @@ MEMORY
 /* Entry Point */
 ENTRY(Reset_Handler)
 
-/* Highest address of the user mode stack - put stack in DTCM for speed */
-_estack = ORIGIN(DTCM) + LENGTH(DTCM);
+/* Highest address of the user mode stack.
+ * MUST be in the same region as the heap (SRAM1/RAM): newlib _sbrk grows the
+ * heap up toward the stack pointer, so if the stack were in DTCM (lower
+ * addresses) while the heap is in SRAM1 (higher), _sbrk would fail every
+ * allocation and malloc() would always return NULL. Keep both in SRAM1. */
+_estack = ORIGIN(RAM) + LENGTH(RAM);
 
 /* Generate a link error if heap and stack don't fit into RAM */
-_Min_Heap_Size = 0x200;       /* Required heap: 512 bytes (malloc not used extensively) */
-_Min_Stack_Size = 0x1000;     /* Required stack: 4KB */
+_Min_Heap_Size = 0x10000;     /* 64K heap (module UART ring buffer + newlib) */
+_Min_Stack_Size = 0x2000;     /* 8K main/ISR stack */
 
 SECTIONS
 {
