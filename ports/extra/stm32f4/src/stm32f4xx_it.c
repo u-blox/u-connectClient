@@ -142,10 +142,29 @@ void SysTick_Handler(void)
 
 /**
   * @brief NORA-W36 UART interrupt handler
-  * - ODIN-W26/F439/NUCLEO-F439ZI: USART1 on PA9/PA10 (all define STM32F439xx)
-  * - F407/F429: USART3 on PB10/PB11
+  * - NUCLEO-F439ZI: USART6 on PG9/PG14 (CN10 Arduino D0/D1), RX DMA2 Stream1
+  * - ODIN-W26/F439 (ODIN-W2): USART1 on PA9/PA10, RX DMA2 Stream2
+  * - F407/F429: USART3 on PB10/PB11, RX DMA1 Stream1
   */
-#if defined(ODIN_W26) || defined(STM32F439xx)
+#if defined(NUCLEO_F439ZI)
+
+/**
+  * @brief This function handles USART6 global interrupt (u-blox module, CN10 D0/D1).
+  */
+void USART6_IRQHandler(void)
+{
+  uPortUart_IRQHandler();
+}
+
+/**
+  * @brief This function handles DMA2 Stream 1 global interrupt (USART6 RX DMA).
+  */
+void DMA2_Stream1_IRQHandler(void)
+{
+  uPortUartDma_IRQHandler();
+}
+
+#elif defined(ODIN_W26) || defined(STM32F439xx)
 
 /**
   * @brief This function handles USART1 global interrupt (u-blox module).

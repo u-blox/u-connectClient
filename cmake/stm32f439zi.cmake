@@ -2,8 +2,8 @@
 set(STM32_CHIP "STM32F439xx")
 set(STM32_FAMILY "STM32F4xx")
 
-# CPU specific flags - Using march=armv7e-m for proper multilib matching
-set(CPU_FLAGS "-march=armv7e-m -mthumb -mfloat-abi=soft")
+# CPU specific flags - Cortex-M4F: hard-float FPU (fpv4-sp-d16)
+set(CPU_FLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16")
 
 # Compiler flags
 set(CMAKE_C_FLAGS_INIT "${CPU_FLAGS} -fdata-sections -ffunction-sections -Wall")
@@ -44,20 +44,20 @@ set(STM32_HAL_SOURCES
     ${STM32_HAL_PATH}/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim_ex.c
 )
 
-# FreeRTOS includes - Using ARM_CM3 port for soft-float
+# FreeRTOS includes - ARM_CM4F port (hard-float FPU)
 set(FREERTOS_INCLUDE_DIRS
     ${FREERTOS_PATH}/include
-    ${FREERTOS_PATH}/portable/GCC/ARM_CM3
+    ${FREERTOS_PATH}/portable/GCC/ARM_CM4F
     ${FREERTOS_PATH}/CMSIS_RTOS
 )
 
-# FreeRTOS sources - Using ARM_CM3 port
+# FreeRTOS sources - ARM_CM4F port
 set(FREERTOS_SOURCES
     ${FREERTOS_PATH}/tasks.c
     ${FREERTOS_PATH}/queue.c
     ${FREERTOS_PATH}/list.c
     ${FREERTOS_PATH}/timers.c
-    ${FREERTOS_PATH}/portable/GCC/ARM_CM3/port.c
+    ${FREERTOS_PATH}/portable/GCC/ARM_CM4F/port.c
     ${FREERTOS_PATH}/portable/MemMang/heap_4.c
     ${FREERTOS_PATH}/CMSIS_RTOS/cmsis_os.c
 )

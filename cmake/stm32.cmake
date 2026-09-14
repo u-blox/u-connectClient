@@ -37,6 +37,12 @@ endif()
 # Pass -DSTM32_UART_USE_DMA=ON to opt into the DMA implementation.
 option(STM32_UART_USE_DMA "Use circular-DMA UART RX instead of the interrupt-driven implementation (STM32F4 only)" OFF)
 
+# NUCLEO-F439ZI runs the NORA-W36 on USART6 (CN10 D0/D1) at 2 Mbaud, which
+# needs the circular-DMA RX path - default it ON for that board.
+if(STM32_BOARD STREQUAL "nucleo_f439zi")
+    set(STM32_UART_USE_DMA ON)
+endif()
+
 # AT command transport: "uart" (default, proven) or "spi" (uCX2 SPI transport,
 # EXPERIMENTAL / not hardware-validated yet, STM32H7 only for now).
 # Pass -DSTM32_TRANSPORT=spi to opt into the SPI transport.
@@ -140,6 +146,9 @@ if(STM32_FAMILY_SHORT STREQUAL "H7")
     set(STM32_EXAMPLE_UART "USART1")
 elseif(STM32_FAMILY_SHORT STREQUAL "F7")
     # NUCLEO-F767ZI: NORA-W36 on CN10 Arduino D0/D1 = PG9/PG14 = USART6
+    set(STM32_EXAMPLE_UART "USART6")
+elseif(STM32_BOARD STREQUAL "nucleo_f439zi")
+    # NUCLEO-F439ZI: NORA-W36 on CN10 Arduino D0/D1 = PG9/PG14 = USART6
     set(STM32_EXAMPLE_UART "USART6")
 else()
     set(STM32_EXAMPLE_UART "USART3")

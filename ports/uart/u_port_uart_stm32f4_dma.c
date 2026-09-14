@@ -35,6 +35,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "stm32f4xx_hal.h"
 
@@ -131,6 +132,11 @@ static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle)
         // buffer content is no longer coherent. Drop it all rather than
         // deliver corrupt data.
         pHandle->overflowCount++;
+        // Diagnostic only - this is a SILENT discard path distinct from
+        // HAL_UART_ErrorCallback; confirms/refutes reader-too-slow as root cause.
+        printf("[UART] RX OVERFLOW #%lu: reader lapped by DMA (available=%lu > bufsize=%u) - discarding\r\n",
+               (unsigned long)pHandle->overflowCount, (unsigned long)available,
+               (unsigned)U_PORT_UART_RX_BUFFER_SIZE);
         pHandle->rxTotalRead = getDmaWriteCount(pHandle);
         return 0;
     }
@@ -148,22 +154,17 @@ static void startRxDma(uPortUartHandle *pHandle)
  * PUBLIC FUNCTIONS
  * -------------------------------------------------------------- */
 
-#include <stdio.h>  // For debug printf
-
 uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useFlowControl)
 {
     (void)pDevice;  // Device name not used on embedded systems
 
-    printf("[UART] Open: %ld baud, flow=%d\r\n", (long)baudRate, useFlowControl);
-
     if (gpUartHandle != NULL) {
-        printf("[UART] ERROR: Already open!\r\n");
+        // Only one UART instance supported
         return NULL;
     }
 
     uPortUartHandle *pHandle = (uPortUartHandle *)malloc(sizeof(uPortUartHandle));
     if (pHandle == NULL) {
-        printf("[UART] ERROR: malloc failed!\r\n");
         return NULL;
     }
 
@@ -171,8 +172,8 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
 
     // Enable GPIO and UART clocks
 #if defined(NUCLEO_F439ZI)
-    // NUCLEO-F439ZI: USART1 on PB6/PB7 (same as H753 Nucleo)
-    __HAL_RCC_GPIOB_CLK_ENABLE();
+    // NUCLEO-F439ZI: USART6 on PG9/PG14 (CN10 Arduino D0/D1)
+    __HAL_RCC_GPIOG_CLK_ENABLE();
 #elif defined(ODIN_W26) || defined(STM32F439xx)
     // ODIN-W26/ODIN-W2: USART1 on PA9/PA10 (SPA UART)
     __HAL_RCC_GPIOA_CLK_ENABLE();
@@ -224,13 +225,10 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
 
     pHandle->huart.Init.OverSampling = UART_OVERSAMPLING_16;
 
-    HAL_StatusTypeDef halStatus = HAL_UART_Init(&pHandle->huart);
-    if (halStatus != HAL_OK) {
-        printf("[UART] ERROR: HAL_UART_Init failed: %d\r\n", halStatus);
+    if (HAL_UART_Init(&pHandle->huart) != HAL_OK) {
         free(pHandle);
         return NULL;
     }
-    printf("[UART] Init OK\r\n");
 
     // Configure circular DMA for RX (writes directly into the ring buffer)
     U_PORT_UART_DMA_CLK_ENABLE();
@@ -377,7 +375,10 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
  * UART INTERRUPT CALLBACKS
  * -------------------------------------------------------------- */
 
-// Forward declarations for debug UART console input
+// Forward declarations for debug UART console input (ODIN-W26 debug_uart.c).
+// Not used on NUCLEO-F439ZI: its console (main_stm32.c) services its own RX
+// in exampleConsoleUart_IRQHandler and never routes through HAL callbacks.
+#if !defined(NUCLEO_F439ZI)
 extern void ConsoleInput_ProcessByte(uint8_t byte);
 extern uint8_t* ConsoleInput_GetRxByteBuffer(void);
 
@@ -393,6 +394,7 @@ extern UART_HandleTypeDef huart2;  // F407/F429: Debug on USART2
 #define DEBUG_UART_INSTANCE USART2
 #define DEBUG_UART_HANDLE huart2
 #endif
+#endif /* !NUCLEO_F439ZI */
 
 /**
 /**
@@ -422,6 +424,11 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     if (gpUartHandle != NULL && huart->Instance == gpUartHandle->huart.Instance) {
         gpUartHandle->errorCount++;
         gpUartHandle->rxResync = true;
+        // Diagnostic only - confirms real electrical RX errors vs software desync.
+        printf("[UART] RX error #%lu ErrorCode=0x%02lX (ORE=%d FE=%d NE=%d PE=%d) - DMA restarted\r\n",
+               (unsigned long)gpUartHandle->errorCount, (unsigned long)huart->ErrorCode,
+               (huart->ErrorCode & HAL_UART_ERROR_ORE) != 0, (huart->ErrorCode & HAL_UART_ERROR_FE) != 0,
+               (huart->ErrorCode & HAL_UART_ERROR_NE) != 0, (huart->ErrorCode & HAL_UART_ERROR_PE) != 0);
         // HAL has already aborted the transfer at this point; clear any
         // remaining error flags and restart circular DMA reception.
         __HAL_UART_CLEAR_OREFLAG(huart);
@@ -430,7 +437,8 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
         HAL_UART_DMAStop(huart);
         startRxDma(gpUartHandle);
     }
-    // Debug UART - for keyboard input
+#if !defined(NUCLEO_F439ZI)
+    // Debug UART - for keyboard input (ODIN-W26 debug_uart.c console)
     else if (huart->Instance == DEBUG_UART_INSTANCE) {
         uint8_t* rxBuf = ConsoleInput_GetRxByteBuffer();
         if (rxBuf) {
@@ -439,6 +447,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
             HAL_UART_Receive_IT(&DEBUG_UART_HANDLE, rxBuf, 1);
         }
     }
+#endif /* !NUCLEO_F439ZI */
 }
 
 /* ----------------------------------------------------------------
