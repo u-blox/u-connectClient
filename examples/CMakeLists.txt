@@ -109,6 +109,9 @@ else()
     )
     target_compile_options(http_example_no_os PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES} -DU_PORT_NO_OS)
     target_include_directories(http_example_no_os PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
+    if(PORT_LIBS)
+      target_link_libraries(http_example_no_os PRIVATE ${PORT_LIBS})
+    endif()
 
     # Firmware Upgrade Example (OS-based)
     add_executable(fw_upgrade_example
@@ -134,6 +137,9 @@ else()
     )
     target_compile_options(fw_upgrade_example_no_os PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES} -DU_PORT_NO_OS -DU_CX_XMODEM_FILE_SUPPORT=1)
     target_include_directories(fw_upgrade_example_no_os PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
+    if(PORT_LIBS)
+      target_link_libraries(fw_upgrade_example_no_os PRIVATE ${PORT_LIBS})
+    endif()
 
     # BLE Scan Example (OS-based)
     add_executable(ble_scan_example
@@ -198,6 +204,19 @@ else()
     target_include_directories(socket_example PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
     if(PORT_LIBS)
       target_link_libraries(socket_example PRIVATE ${PORT_LIBS})
+    endif()
+
+    # MQTT <-> BLE Gateway Example (OS-based)
+    add_executable(ble_mqtt_gateway_example
+      ble_mqtt_gateway_example.c
+      ${PORT_OS_SRC}
+      ${PORT_UART_SRC}
+      ${EXAMPLE_COMMON_SRC}
+    )
+    target_compile_options(ble_mqtt_gateway_example PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES})
+    target_include_directories(ble_mqtt_gateway_example PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
+    if(PORT_LIBS)
+      target_link_libraries(ble_mqtt_gateway_example PRIVATE ${PORT_LIBS})
     endif()
 endif()
 

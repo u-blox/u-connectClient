@@ -159,7 +159,7 @@ static HANDLE openComPort(const char *pDevName, int baudRate, bool useFlowContro
         return INVALID_HANDLE_VALUE;
     }
 
-    dcb.BaudRate = baudRate;
+    dcb.BaudRate = (DWORD)baudRate;
     dcb.ByteSize = 8;
     dcb.Parity = NOPARITY;
     dcb.StopBits = ONESTOPBIT;
