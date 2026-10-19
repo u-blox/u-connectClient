@@ -4,6 +4,7 @@
 
 static int gComHandle;
 static int gThreadHandle;
+static int gEventHandle;
 static int gSemaphoreHandle;
 static LPTHREAD_START_ROUTINE gpThreadStart;
 static LPVOID gpThreadParameter;
@@ -111,6 +112,10 @@ BOOL WriteFile(HANDLE handle, const void *pData, DWORD length,
     (void)pOverlapped;
     gFakeWindows.writeLength = length;
     *pWritten = gFakeWindows.bytesWritten;
+    if (gFakeWindows.ioPending) {
+        gFakeWindows.lastError = ERROR_IO_PENDING;
+        return FALSE;
+    }
     return gFakeWindows.writeResult;
 }
 
@@ -122,6 +127,10 @@ BOOL ReadFile(HANDLE handle, void *pData, DWORD length,
     (void)pOverlapped;
     gFakeWindows.readLength = length;
     *pRead = gFakeWindows.bytesRead;
+    if (gFakeWindows.ioPending) {
+        gFakeWindows.lastError = ERROR_IO_PENDING;
+        return FALSE;
+    }
     return gFakeWindows.readResult;
 }
 
@@ -139,6 +148,11 @@ BOOL WaitCommEvent(HANDLE handle, LPDWORD pEventMask,
     (void)handle;
     (void)pOverlapped;
     gFakeWindows.waitCommCalls++;
+    if (gFakeWindows.ioPending) {
+        *pEventMask = gFakeWindows.waitEventMask;
+        gFakeWindows.lastError = ERROR_IO_PENDING;
+        return FALSE;
+    }
     if (gFakeWindows.waitCommCalls == 1) {
         *pEventMask = gFakeWindows.waitEventMask;
         return TRUE;
@@ -155,6 +169,29 @@ BOOL CancelIoEx(HANDLE handle, LPOVERLAPPED pOverlapped)
     (void)pOverlapped;
     gFakeWindows.cancelCalls++;
     return TRUE;
+}
+
+BOOL GetOverlappedResult(HANDLE handle, LPOVERLAPPED pOverlapped,
+                         LPDWORD pTransferred, BOOL wait)
+{
+    (void)handle;
+    (void)pOverlapped;
+    (void)wait;
+    *pTransferred = gFakeWindows.overlappedBytes;
+    if (!gFakeWindows.overlappedResult) {
+        gFakeWindows.lastError = ERROR_OPERATION_ABORTED;
+    }
+    return gFakeWindows.overlappedResult;
+}
+
+HANDLE CreateEventA(LPSECURITY_ATTRIBUTES pAttributes, BOOL manualReset,
+                    BOOL initialState, LPCSTR pName)
+{
+    (void)pAttributes;
+    (void)manualReset;
+    (void)initialState;
+    (void)pName;
+    return &gEventHandle;
 }
 
 DWORD GetLastError(void)
