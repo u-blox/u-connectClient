@@ -14,6 +14,9 @@ typedef struct {
     BOOL writeResult;
     BOOL clearCommErrorResult;
     BOOL createThreadResult;
+    BOOL ioPending;
+    BOOL overlappedResult;
+    DWORD overlappedBytes;
     DWORD lastError;
     DWORD waitResult;
     DWORD waitEventMask;
