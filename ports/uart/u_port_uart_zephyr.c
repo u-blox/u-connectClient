@@ -80,15 +80,14 @@ static void uartIsr(const struct device *dev, void *user_data)
     while (uart_irq_rx_ready(dev) && (ret > 0)) {
         uint8_t *pData;
         signalRxWorker = true;
-        ret = ring_buf_put_claim(&pHandle->rxRingBuf, &pData, UINT32_MAX);
+        ret = ring_buf_put_ptr(&pHandle->rxRingBuf, &pData, 0);
         if (ret == 0) {
             // Ring buffer full
             uart_irq_rx_disable(dev);
         } else {
-            // Read as many bytes as ring_buf_put_claim() returned
             ret = uart_fifo_read(dev, pData, ret);
         }
-        ring_buf_put_finish(&pHandle->rxRingBuf, (ret > 0) ? ret : 0);
+        ring_buf_commit(&pHandle->rxRingBuf, (ret > 0) ? ret : 0);
         uart_irq_update(dev);
     }
 

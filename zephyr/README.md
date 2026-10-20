@@ -46,7 +46,6 @@ To build u-connectClient with your Zephyr application you must add the following
 ```ini
 CONFIG_SERIAL=y
 CONFIG_UART_INTERRUPT_DRIVEN=y
-CONFIG_RING_BUFFER=y
 CONFIG_U_CONNECT_CLIENT=y
 ```
 
