@@ -26,6 +26,8 @@
 
 /* Forward declarations */
 extern void uPortUart_IRQHandler(void);
+extern void uPortUartDma_IRQHandler(void);
+extern void exampleConsoleUart_IRQHandler(void);
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -122,6 +124,12 @@ void DebugMon_Handler(void)
   */
 void SysTick_Handler(void)
 {
+  /* osSystickHandler() only feeds FreeRTOS's tick once the scheduler is
+   * running, so HAL_IncTick() must be called unconditionally here or
+   * HAL_GetTick()/HAL-internal timeouts stay frozen at 0 for all of main()
+   * before vTaskStartScheduler() - turning bounded timeouts into infinite
+   * hangs (e.g. SystemClock_Config()'s HSE/PLL ready waits). */
+  HAL_IncTick();
   osSystickHandler();
 }
 
@@ -133,9 +141,86 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
+  * @brief NORA-W36 UART interrupt handler
+  * - NUCLEO-F439ZI: USART6 on PG9/PG14 (CN10 Arduino D0/D1), RX DMA2 Stream1
+  * - ODIN-W26/F439 (ODIN-W2): USART1 on PA9/PA10, RX DMA2 Stream2
+  * - F407/F429: USART3 on PB10/PB11, RX DMA1 Stream1
+  */
+#if defined(NUCLEO_F439ZI)
+
+/**
+  * @brief This function handles USART6 global interrupt (u-blox module, CN10 D0/D1).
+  */
+void USART6_IRQHandler(void)
+{
+  uPortUart_IRQHandler();
+}
+
+/**
+  * @brief This function handles DMA2 Stream 1 global interrupt (USART6 RX DMA).
+  */
+void DMA2_Stream1_IRQHandler(void)
+{
+  uPortUartDma_IRQHandler();
+}
+
+#elif defined(ODIN_W26) || defined(STM32F439xx)
+
+/**
+  * @brief This function handles USART1 global interrupt (u-blox module).
+  */
+void USART1_IRQHandler(void)
+{
+  uPortUart_IRQHandler();
+}
+
+/**
+  * @brief This function handles DMA2 Stream 2 global interrupt (USART1 RX DMA).
+  */
+void DMA2_Stream2_IRQHandler(void)
+{
+  uPortUartDma_IRQHandler();
+}
+
+#else /* STM32F407G-DISC1 (default) */
+
+/**
   * @brief This function handles USART3 global interrupt.
   */
 void USART3_IRQHandler(void)
 {
   uPortUart_IRQHandler();
 }
+
+/**
+  * @brief This function handles DMA1 Stream 1 global interrupt (USART3 RX DMA).
+  */
+void DMA1_Stream1_IRQHandler(void)
+{
+  uPortUartDma_IRQHandler();
+}
+
+#endif
+
+/**
+  * @brief Console UART interrupt handler (ST-LINK VCP).
+  * - NUCLEO-F439ZI: USART3 (console) - module is on USART1, so USART3 is
+  *   free to use for the console here.
+  * - STM32F407G-DISC1: USART2 (console) - module is on USART3, so USART2 is
+  *   free to use for the console here.
+  *
+  * Feeds the interrupt-driven RX ring buffer in main_stm32.c so
+  * exampleConsoleUartRead() never overruns during sustained/binary transfers
+  * (e.g. XMODEM via uart_bridge_example).
+  */
+#if defined(NUCLEO_F439ZI)
+void USART3_IRQHandler(void)
+{
+  exampleConsoleUart_IRQHandler();
+}
+#else
+void USART2_IRQHandler(void)
+{
+  exampleConsoleUart_IRQHandler();
+}
+#endif /* NUCLEO_F439ZI */

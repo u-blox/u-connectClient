@@ -1,3 +1,9 @@
 [submodule "ports/extra/stm32f4/STM32CubeF4"]
 	path = ports/extra/stm32f4/STM32CubeF4
 	url = https://github.com/STMicroelectronics/STM32CubeF4
+[submodule "ports/extra/stm32h7/STM32CubeH7"]
+	path = ports/extra/stm32h7/STM32CubeH7
+	url = https://github.com/STMicroelectronics/STM32CubeH7
+[submodule "ports/extra/stm32f7/STM32CubeF7"]
+	path = ports/extra/stm32f7/STM32CubeF7
+	url = https://github.com/STMicroelectronics/STM32CubeF7

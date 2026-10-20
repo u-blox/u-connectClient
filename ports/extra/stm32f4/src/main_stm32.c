@@ -16,6 +16,7 @@
 /* Forward declarations */
 static void SystemClock_Config(void);
 static void GPIO_Init(void);
+void Error_Handler(void);
 
 /* External application main function from examples */
 extern int app_main(int argc, char *argv[]);
@@ -50,7 +51,11 @@ int main(void)
 
     /* Send early test message */
     printf("\r\n===========================================\r\n");
+#if defined(NUCLEO_F439ZI)
+    printf("NUCLEO-F439ZI u-connectClient - Starting...\r\n");
+#else
     printf("STM32F407 u-connectClient - Starting...\r\n");
+#endif
     printf("===========================================\r\n");
     printf("Creating FreeRTOS task...\r\n");
 
@@ -110,6 +115,18 @@ static void SystemClock_Config(void)
      regarding system frequency refer to product datasheet.  */
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
+#if defined(NUCLEO_F439ZI)
+  /* NUCLEO-F439ZI: 8 MHz clock from ST-LINK MCO on HSE input (bypass mode).
+   * PLL: 8 MHz / M=8 * N=336 / P=2 = 168 MHz SYSCLK, Q=7 -> 48 MHz. */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 336;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 7;
+#else
   /* Enable HSE Oscillator and activate PLL with HSE as source */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
@@ -119,6 +136,7 @@ static void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLN = 336;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 7;
+#endif
   HAL_RCC_OscConfig(&RCC_OscInitStruct);
 
   /* Select PLL as system clock source and configure the HCLK, PCLK1 and PCLK2
@@ -139,8 +157,70 @@ static void SystemClock_Config(void)
 }
 
 /* UART handle for console output (printf) */
-static UART_HandleTypeDef huart2;
+static UART_HandleTypeDef gConsoleUart;
 
+#ifndef U_EXAMPLE_CONSOLE_RX_BUFFER_SIZE
+#define U_EXAMPLE_CONSOLE_RX_BUFFER_SIZE (2048)
+#endif
+
+/* Interrupt-driven RX ring buffer for the console UART.
+ *
+ * uart_bridge_example.c polls exampleConsoleUartRead() from a task-context
+ * loop, which can be delayed (FreeRTOS preemption, time spent blocked on
+ * the module UART write) for longer than one byte period at 115200 baud
+ * (~87us). The console USART's data register is only a single byte deep,
+ * so a plain blocking HAL_UART_Receive() poll silently drops bytes under
+ * sustained continuous streaming (e.g. an XMODEM firmware transfer over
+ * TeraTerm) - this is what made large/binary transfers get stuck. Feeding
+ * this ring buffer directly from the RXNE interrupt means no byte is ever
+ * lost between polls, regardless of how promptly the bridge loop drains it. */
+static volatile uint8_t gConsoleRxBuffer[U_EXAMPLE_CONSOLE_RX_BUFFER_SIZE];
+static volatile uint32_t gConsoleRxHead = 0;
+static volatile uint32_t gConsoleRxTail = 0;
+
+#if defined(NUCLEO_F439ZI)
+/**
+ * @brief  Initialize USART3 for console output (ST-LINK VCP)
+ * USART3 TX: PD8, RX: PD9 (AF7)
+ * Baud: 115200, 8N1
+ */
+static void Console_UART_Init(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    /* Enable clocks */
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+    __HAL_RCC_USART3_CLK_ENABLE();
+
+    /* Configure USART3 GPIO pins (PD8 = TX, PD9 = RX) */
+    GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_9;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF7_USART3;
+    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+    gConsoleUart.Instance = USART3;
+    gConsoleUart.Init.BaudRate = 115200;
+    gConsoleUart.Init.WordLength = UART_WORDLENGTH_8B;
+    gConsoleUart.Init.StopBits = UART_STOPBITS_1;
+    gConsoleUart.Init.Parity = UART_PARITY_NONE;
+    gConsoleUart.Init.Mode = UART_MODE_TX_RX;
+    gConsoleUart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    gConsoleUart.Init.OverSampling = UART_OVERSAMPLING_16;
+
+    if (HAL_UART_Init(&gConsoleUart) != HAL_OK) {
+        Error_Handler();
+    }
+
+    /* Interrupt-driven RX (see gConsoleRxBuffer comment above) so large or
+     * binary transfers relayed by uart_bridge_example don't overrun the
+     * single-byte data register between polls. */
+    HAL_NVIC_SetPriority(USART3_IRQn, 6, 0);
+    HAL_NVIC_EnableIRQ(USART3_IRQn);
+    __HAL_UART_ENABLE_IT(&gConsoleUart, UART_IT_RXNE);
+}
+#else
 /**
  * @brief  Initialize UART2 for console output
  * UART2 TX: PA2, RX: PA3
@@ -163,23 +243,31 @@ static void Console_UART_Init(void)
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
     /* Configure UART2 - with HSI clock (16MHz), APB1 should be 16MHz */
-    huart2.Instance = USART2;
-    huart2.Init.BaudRate = 115200;
-    huart2.Init.WordLength = UART_WORDLENGTH_8B;
-    huart2.Init.StopBits = UART_STOPBITS_1;
-    huart2.Init.Parity = UART_PARITY_NONE;
-    huart2.Init.Mode = UART_MODE_TX_RX;
-    huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+    gConsoleUart.Instance = USART2;
+    gConsoleUart.Init.BaudRate = 115200;
+    gConsoleUart.Init.WordLength = UART_WORDLENGTH_8B;
+    gConsoleUart.Init.StopBits = UART_STOPBITS_1;
+    gConsoleUart.Init.Parity = UART_PARITY_NONE;
+    gConsoleUart.Init.Mode = UART_MODE_TX_RX;
+    gConsoleUart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    gConsoleUart.Init.OverSampling = UART_OVERSAMPLING_16;
 
-    if (HAL_UART_Init(&huart2) != HAL_OK) {
+    if (HAL_UART_Init(&gConsoleUart) != HAL_OK) {
         /* If HAL init fails, manually set baud rate for 16MHz APB1 clock */
         /* BRR = APB1_Clock / BaudRate = 16000000 / 115200 = 138.88 ≈ 139 (0x8B) */
         USART2->BRR = 139;
         /* Enable UART: UE, TE, RE */
         USART2->CR1 |= USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
     }
+
+    /* Interrupt-driven RX (see gConsoleRxBuffer comment above) so large or
+     * binary transfers relayed by uart_bridge_example don't overrun the
+     * single-byte data register between polls. */
+    HAL_NVIC_SetPriority(USART2_IRQn, 6, 0);
+    HAL_NVIC_EnableIRQ(USART2_IRQn);
+    __HAL_UART_ENABLE_IT(&gConsoleUart, UART_IT_RXNE);
 }
+#endif /* NUCLEO_F439ZI */
 
 /**
  * @brief  Legacy GPIO init kept for compatibility
@@ -200,11 +288,43 @@ void HAL_MspInit(void)
     HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 }
 
-/* HAL UART MSP Init for USART3 (u-blox module) - STM32F407G-DISC1 compatible */
+/* HAL UART MSP Init for the u-blox module UART */
 void HAL_UART_MspInit(UART_HandleTypeDef* huart)
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
 
+#if defined(NUCLEO_F439ZI)
+    if (huart->Instance == USART6)
+    {
+        /* USART6 GPIO Configuration on NUCLEO-F439ZI (CN10 Arduino header):
+         * PG14: USART6_TX (Arduino D1)
+         * PG9:  USART6_RX (Arduino D0)
+         * Same CN10 D0/D1 pins as the NUCLEO-F767ZI (MB1137 PCB).
+         */
+        __HAL_RCC_GPIOG_CLK_ENABLE();
+        __HAL_RCC_USART6_CLK_ENABLE();
+
+        GPIO_InitStruct.Pin = GPIO_PIN_9 | GPIO_PIN_14;
+        GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+        GPIO_InitStruct.Pull = GPIO_NOPULL;
+        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+        GPIO_InitStruct.Alternate = GPIO_AF8_USART6;
+        HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+
+        /* Configure CTS/RTS if hardware flow control is enabled
+         * (USART6 CTS = PG13, RTS = PG8, AF8) */
+        if (huart->Init.HwFlowCtl == UART_HWCONTROL_RTS_CTS)
+        {
+            GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_13;
+            GPIO_InitStruct.Alternate = GPIO_AF8_USART6;
+            HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+        }
+    }
+    else if (huart->Instance == USART3)
+    {
+        /* USART3 (console) already initialized in Console_UART_Init */
+    }
+#else
     if (huart->Instance == USART3)
     {
         /* USART3 GPIO Configuration on STM32F407G-DISC1:
@@ -239,6 +359,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     {
         /* USART2 already initialized in Console_UART_Init */
     }
+#endif /* NUCLEO_F439ZI */
 }
 
 /* FreeRTOS Hooks */
@@ -274,13 +395,73 @@ void assert_failed(uint8_t* file, uint32_t line)
     while (1);
 }
 
-/* Retarget printf to UART2 via __io_putchar (used by syscalls.c _write) */
+/* Retarget printf to the console UART via __io_putchar (used by syscalls.c _write) */
 int __io_putchar(int ch)
 {
     /* Use HAL_UART_Transmit with a reasonable timeout */
     uint8_t c = (uint8_t)ch;
-    if (HAL_UART_Transmit(&huart2, &c, 1, 1000) == HAL_OK) {
+    if (HAL_UART_Transmit(&gConsoleUart, &c, 1, 1000) == HAL_OK) {
         return ch;
+    }
+    return -1;
+}
+
+/**
+ * @brief Console UART RX interrupt handler - called from USART3_IRQHandler
+ * (NUCLEO-F439ZI) or USART2_IRQHandler (STM32F407G-DISC1) - see
+ * stm32f4xx_it.c. Reads the raw data register directly instead of going
+ * through HAL_UART_IRQHandler()/HAL_UART_RxCpltCallback(), since that
+ * callback name is already defined (for the module UART instance) by the
+ * generic port driver (u_port_uart_stm32f4_irq.c/_dma.c) and cannot be
+ * redefined here.
+ */
+void exampleConsoleUart_IRQHandler(void)
+{
+    if (__HAL_UART_GET_FLAG(&gConsoleUart, UART_FLAG_RXNE)) {
+        uint8_t byte = (uint8_t)gConsoleUart.Instance->DR;
+        uint32_t nextHead = (gConsoleRxHead + 1) % U_EXAMPLE_CONSOLE_RX_BUFFER_SIZE;
+        if (nextHead != gConsoleRxTail) {
+            gConsoleRxBuffer[gConsoleRxHead] = byte;
+            gConsoleRxHead = nextHead;
+        }
+        /* else: buffer full, drop the byte (reader too slow) */
+    }
+    if (__HAL_UART_GET_FLAG(&gConsoleUart, UART_FLAG_ORE)) {
+        /* Overrun can only happen if RXNE wasn't serviced for >1 byte time;
+         * clear it so reception keeps going. */
+        __HAL_UART_CLEAR_OREFLAG(&gConsoleUart);
+    }
+}
+
+/*
+ * Raw console UART access for uart_bridge_example. Bypasses the printf
+ * retarget above so the example can both read and write the ST-Link VCP
+ * UART directly (needed to bridge it with the u-blox module UART).
+ *
+ * exampleConsoleUartRead() pops from the interrupt-fed ring buffer above
+ * instead of calling HAL_UART_Receive() directly - see gConsoleRxBuffer
+ * comment for why.
+ */
+int32_t exampleConsoleUartRead(uint8_t *pByte, int32_t timeoutMs)
+{
+    uint32_t startTime = HAL_GetTick();
+
+    do {
+        uint32_t tail = gConsoleRxTail;
+        if (gConsoleRxHead != tail) {
+            *pByte = gConsoleRxBuffer[tail];
+            gConsoleRxTail = (tail + 1) % U_EXAMPLE_CONSOLE_RX_BUFFER_SIZE;
+            return 1;
+        }
+    } while ((timeoutMs > 0) && ((int32_t)(HAL_GetTick() - startTime) < timeoutMs));
+
+    return 0;
+}
+
+int32_t exampleConsoleUartWrite(const void *pData, size_t length)
+{
+    if (HAL_UART_Transmit(&gConsoleUart, (uint8_t *)pData, (uint16_t)length, 1000) == HAL_OK) {
+        return (int32_t)length;
     }
     return -1;
 }

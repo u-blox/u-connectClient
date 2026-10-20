@@ -15,19 +15,22 @@
  */
 
 /** @file
- * @brief STM32F407VG UART port implementation using HAL.
+ * @brief STM32F4 UART port implementation using HAL - interrupt-driven (default).
  *
- * This implementation uses STM32 HAL library and supports:
- * - Configurable UART instance (USART1-6, UART4-5)
- * - Hardware flow control (RTS/CTS)
- * - Interrupt-driven reception with circular buffer
- * - DMA support (optional, can be enabled via defines)
+ * This is the original, proven implementation: single-byte RX interrupts
+ * into a circular buffer. Lower throughput than the DMA variant
+ * (u_port_uart_stm32f4_dma.c) but has no DMA setup/error-recovery surface.
+ * Select the DMA variant instead with -DSTM32_UART_USE_DMA=ON if you need
+ * higher baud rates (2 Mbaud+).
+ *
+ * GPIO/clock configuration for the u-blox module UART is done in
+ * HAL_UART_MspInit() (see main_stm32.c), which is called automatically by
+ * HAL_UART_Init() below.
  */
 
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
-#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -69,7 +72,7 @@ static uPortUartHandle *gpUartHandle = NULL;
  * -------------------------------------------------------------- */
 
 static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle);
-static bool startRxInterrupt(uPortUartHandle *pHandle);
+static void startRxInterrupt(uPortUartHandle *pHandle);
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
@@ -87,9 +90,9 @@ static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle)
     }
 }
 
-static bool startRxInterrupt(uPortUartHandle *pHandle)
+static void startRxInterrupt(uPortUartHandle *pHandle)
 {
-    return HAL_UART_Receive_IT(&pHandle->huart, &pHandle->rxByte, 1) == HAL_OK;
+    HAL_UART_Receive_IT(&pHandle->huart, &pHandle->rxByte, 1);
 }
 
 /* ----------------------------------------------------------------
@@ -112,7 +115,7 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
 
     memset(pHandle, 0, sizeof(uPortUartHandle));
 
-    // Enable UART clock
+    // Enable UART clock (GPIO clock/pins are configured in HAL_UART_MspInit())
     U_PORT_UART_CLK_ENABLE();
 
     // Configure UART
@@ -122,17 +125,10 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     pHandle->huart.Init.StopBits = UART_STOPBITS_1;
     pHandle->huart.Init.Parity = UART_PARITY_NONE;
     pHandle->huart.Init.Mode = UART_MODE_TX_RX;
-
-    if (useFlowControl) {
-        pHandle->huart.Init.HwFlowCtl = UART_HWCONTROL_RTS_CTS;
-    } else {
-        pHandle->huart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-    }
-
+    pHandle->huart.Init.HwFlowCtl = useFlowControl ? UART_HWCONTROL_RTS_CTS : UART_HWCONTROL_NONE;
     pHandle->huart.Init.OverSampling = UART_OVERSAMPLING_16;
 
     if (HAL_UART_Init(&pHandle->huart) != HAL_OK) {
-        U_PORT_UART_CLK_DISABLE();
         free(pHandle);
         return NULL;
     }
@@ -147,10 +143,7 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     gpUartHandle = pHandle;
 
     // Start receiving
-    if (!startRxInterrupt(pHandle)) {
-        uPortUartClose((uPortUartHandle_t)pHandle);
-        return NULL;
-    }
+    startRxInterrupt(pHandle);
 
     return (uPortUartHandle_t)pHandle;
 }
@@ -179,8 +172,7 @@ int32_t uPortUartWrite(uPortUartHandle_t handle,
                        const void *pData,
                        size_t length)
 {
-    if ((handle == NULL) || (pData == NULL) || (length == 0) ||
-        (length > INT32_MAX)) {
+    if ((handle == NULL) || (pData == NULL) || (length == 0)) {
         return -1;
     }
 
@@ -190,19 +182,10 @@ int32_t uPortUartWrite(uPortUartHandle_t handle,
         return -1;
     }
 
-    const uint8_t *pBytes = (const uint8_t *)pData;
-    size_t bytesWritten = 0;
-    while (bytesWritten < length) {
-        size_t bytesRemaining = length - bytesWritten;
-        uint16_t chunkLength = bytesRemaining > UINT16_MAX ?
-                               UINT16_MAX : (uint16_t)bytesRemaining;
+    HAL_StatusTypeDef status = HAL_UART_Transmit(&pHandle->huart, (uint8_t *)pData, (uint16_t)length, HAL_MAX_DELAY);
 
-        if (HAL_UART_Transmit(&pHandle->huart,
-                              (uint8_t *)(pBytes + bytesWritten),
-                              chunkLength, HAL_MAX_DELAY) != HAL_OK) {
-            return -1;
-        }
-        bytesWritten += chunkLength;
+    if (status != HAL_OK) {
+        return -1;
     }
 
     return (int32_t)length;
@@ -238,13 +221,12 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
         return 0;
     }
 
-    // Wait for data if blocking or using a positive timeout
-    if ((timeoutMs != 0) && (available == 0)) {
+    // Wait for data if blocking
+    if (timeoutMs > 0 && available == 0) {
         uint32_t startTime = HAL_GetTick();
         while (available == 0) {
             available = getRxBufferAvailable(pHandle);
-            if ((timeoutMs > 0) &&
-                ((HAL_GetTick() - startTime) >= (uint32_t)timeoutMs)) {
+            if ((HAL_GetTick() - startTime) >= (uint32_t)timeoutMs) {
                 return 0;  // Timeout
             }
         }
@@ -288,15 +270,13 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         }
         // If buffer full, drop the byte (could add overflow handling here)
 
-        uPortUartRxSignalFromIsr();
-
         // Restart reception
-        (void)startRxInterrupt(gpUartHandle);
+        startRxInterrupt(gpUartHandle);
     }
 }
 
 /* ----------------------------------------------------------------
- * UART INTERRUPT HANDLER
+ * UART INTERRUPT HANDLERS
  * -------------------------------------------------------------- */
 
 /**
@@ -315,4 +295,40 @@ void uPortUart_IRQHandler(void)
     if (gpUartHandle != NULL) {
         HAL_UART_IRQHandler(&gpUartHandle->huart);
     }
+}
+
+/**
+ * @brief RX DMA stream interrupt handler stub.
+ *
+ * stm32f4xx_it.c always wires up a DMA stream IRQ handler for the
+ * u-blox module UART regardless of build mode. This mode doesn't use DMA,
+ * so the DMA interrupt is never actually enabled/fired - this stub just
+ * satisfies the link.
+ */
+void uPortUartDma_IRQHandler(void)
+{
+}
+
+/* ----------------------------------------------------------------
+ * UART FLUSH FUNCTIONS
+ * -------------------------------------------------------------- */
+
+void uPortUartFlushRx(uPortUartHandle_t handle)
+{
+    if (handle == NULL) {
+        return;
+    }
+
+    uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+
+    if (!pHandle->isOpen) {
+        return;
+    }
+
+    // Discard anything currently sitting in the ring buffer. Disable the
+    // UART interrupt briefly so rxHead can't move under us while we snapshot
+    // it into rxTail (HAL_UART_RxCpltCallback above writes both).
+    HAL_NVIC_DisableIRQ(U_PORT_UART_IRQn);
+    pHandle->rxTail = pHandle->rxHead;
+    HAL_NVIC_EnableIRQ(U_PORT_UART_IRQn);
 }
