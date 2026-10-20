@@ -315,6 +315,7 @@ void uPortUartWake(uPortUartHandle_t handle)
     if (handle != NULL) {
         uPortUartHandle *pHandle = (uPortUartHandle *)handle;
         uint8_t wakeByte = 1;
-        (void)write(pHandle->wakeWriteFd, &wakeByte, sizeof(wakeByte));
+        ssize_t wr = write(pHandle->wakeWriteFd, &wakeByte, sizeof(wakeByte));
+        (void)wr; // A failed wake write is harmless: the reader times out anyway.
     }
 }
