@@ -31,4 +31,6 @@ log "UART2 (console) available on: nc localhost 3456"
 log "--------------------------------------"
 log ""
 
+log "Waiting 2 seconds for ucx_mock startup before running firmware"
+python "import time; time.sleep(2)"
 start
