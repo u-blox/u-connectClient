@@ -3,14 +3,12 @@ services:
     build:
       context: .
       dockerfile: stm32f4/Dockerfile
-      network: host # use host network during build to fix DNS resolution
     image: u-connect-client-stm32f4:latest
-    network_mode: host  # share host networking for Renode runs
     volumes:
       - ../:/project
       - ${CCACHE_DIR:-~/.ccache}:/ccache
     working_dir: /project
-    user: "${HOST_UID:-0}:${HOST_GID:-0}"
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       - UCX_STM32_DOCKER=1
       - WIFI_SSID=${WIFI_SSID:-ubx}

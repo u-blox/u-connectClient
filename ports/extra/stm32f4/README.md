@@ -91,6 +91,25 @@ inv stm32.uart-console              # In another terminal
 
 Or use VS Code debug configuration: **"STM32 HTTP (Renode GDB)"**
 
+Docker builds and emulation use bridge networking, not host networking.
+The automated UART client and module mock run alongside Renode in the same
+container, so their loopback connections and PTY do not need published ports.
+The image defaults to UID/GID 1000; Invoke passes the caller's UID/GID for
+local Compose runs so build outputs remain owned by the caller.
+
+Host-side debugging requires publishing the relevant port explicitly. For GDB:
+
+```bash
+cd docker
+export HOST_UID="$(id -u)" HOST_GID="$(id -g)"
+docker compose run --rm -p 127.0.0.1:3333:3333 \
+stm32f4-builder bash -c 'cd /project/examples && inv stm32.http.emulate --gdb'
+```
+
+Use the same loopback-only publishing pattern for UART port 3456 or the Renode
+monitor on port 9999 when connecting from the host. No ports are published by
+default.
+
 ### Physical Hardware
 
 Connect STM32F407G-DISC1 via ST-Link and use VS Code debug configuration: **"STM32 HTTP (Hardware ST-Link)"**
