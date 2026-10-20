@@ -129,6 +129,7 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     pHandle->huart.Init.OverSampling = UART_OVERSAMPLING_16;
 
     if (HAL_UART_Init(&pHandle->huart) != HAL_OK) {
+        U_PORT_UART_CLK_DISABLE();
         free(pHandle);
         return NULL;
     }
@@ -143,7 +144,14 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     gpUartHandle = pHandle;
 
     // Start receiving
-    startRxInterrupt(pHandle);
+    if (HAL_UART_Receive_IT(&pHandle->huart, &pHandle->rxByte, 1) != HAL_OK) {
+        HAL_NVIC_DisableIRQ(U_PORT_UART_IRQn);
+        HAL_UART_DeInit(&pHandle->huart);
+        U_PORT_UART_CLK_DISABLE();
+        gpUartHandle = NULL;
+        free(pHandle);
+        return NULL;
+    }
 
     return (uPortUartHandle_t)pHandle;
 }
