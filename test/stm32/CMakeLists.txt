@@ -10,7 +10,7 @@ option(ENABLE_SANITIZERS "Build with address and undefined sanitizers" ON)
 add_executable(test_stm32_uart
     test_stm32_uart.c
     fake/fake_stm32_hal.c
-    ../../ports/uart/u_port_uart_stm32f4.c
+    ../../ports/uart/u_port_uart_stm32f4_irq.c
 )
 
 target_include_directories(test_stm32_uart PRIVATE

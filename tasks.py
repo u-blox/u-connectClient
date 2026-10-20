@@ -120,7 +120,7 @@ def stm32_unit(c):
     c.run(f"cmake --build {build_dir} --parallel")
     c.run(f"ctest --test-dir {build_dir} --output-on-failure")
     c.run(f"gcovr {build_dir} --root {REPO_ROOT} --object-directory {build_dir} "
-            "--filter 'ports/(os/u_port_freertos|uart/u_port_uart_stm32f4)\\.c' "
+            "--filter 'ports/(os/u_port_freertos|uart/u_port_uart_stm32f4_irq)\\.c' "
           f"--txt --html-details {os.path.join(build_dir, 'coverage.html')}")
 
 
