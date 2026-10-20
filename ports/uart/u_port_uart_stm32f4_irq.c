@@ -190,10 +190,17 @@ int32_t uPortUartWrite(uPortUartHandle_t handle,
         return -1;
     }
 
-    HAL_StatusTypeDef status = HAL_UART_Transmit(&pHandle->huart, (uint8_t *)pData, (uint16_t)length, HAL_MAX_DELAY);
+    const uint8_t *pBytes = (const uint8_t *)pData;
+    size_t remaining = length;
 
-    if (status != HAL_OK) {
-        return -1;
+    // HAL_UART_Transmit() takes a 16-bit size
+    while (remaining > 0) {
+        uint16_t chunk = (remaining > UINT16_MAX) ? UINT16_MAX : (uint16_t)remaining;
+        if (HAL_UART_Transmit(&pHandle->huart, (uint8_t *)pBytes, chunk, HAL_MAX_DELAY) != HAL_OK) {
+            return -1;
+        }
+        pBytes += chunk;
+        remaining -= chunk;
     }
 
     return (int32_t)length;
