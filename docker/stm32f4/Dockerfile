@@ -60,3 +60,6 @@ RUN groupadd --gid 1000 vscode \
     && chmod 0440 /etc/sudoers.d/vscode
 
 WORKDIR /project
+
+ENV HOME=/home/vscode
+USER 1000:1000
