@@ -40,9 +40,8 @@ extern "C" {
 #define HAL_RNG_MODULE_ENABLED
 #define HAL_IWDG_MODULE_ENABLED      /* Independent watchdog */
 
-/* SPI HAL module: needed for SD card via SPI (UCM_ENABLE_SD_CARD feature flag)
- * and/or the uCX2 SPI transport (UCX_SPI_TRANSPORT, set by -DSTM32_TRANSPORT=spi) */
-#if defined(UCM_ENABLE_SD_CARD) || defined(UCX_SPI_TRANSPORT)
+/* SPI HAL module: needed for SD card via SPI (UCM_ENABLE_SD_CARD feature flag) */
+#if defined(UCM_ENABLE_SD_CARD)
 #define HAL_SPI_MODULE_ENABLED
 #endif
 
