@@ -17,7 +17,12 @@ typedef void *LPVOID;
 typedef const char *LPCSTR;
 typedef DWORD *LPDWORD;
 typedef void *LPSECURITY_ATTRIBUTES;
-typedef void *LPOVERLAPPED;
+typedef struct {
+    DWORD Internal;
+    DWORD InternalHigh;
+    HANDLE hEvent;
+} OVERLAPPED;
+typedef OVERLAPPED *LPOVERLAPPED;
 typedef DWORD (*LPTHREAD_START_ROUTINE)(LPVOID);
 
 typedef struct {
@@ -65,6 +70,7 @@ typedef struct {
 #define GENERIC_READ 0x80000000UL
 #define GENERIC_WRITE 0x40000000UL
 #define OPEN_EXISTING 3UL
+#define FILE_FLAG_OVERLAPPED 0x40000000UL
 #define NOPARITY 0U
 #define ONESTOPBIT 0U
 #define RTS_CONTROL_ENABLE 1UL
@@ -74,6 +80,7 @@ typedef struct {
 #define PURGE_TXCLEAR 4UL
 #define PURGE_RXCLEAR 8UL
 #define ERROR_ACCESS_DENIED 5UL
+#define ERROR_IO_PENDING 997UL
 #define ERROR_OPERATION_ABORTED 995UL
 #define WAIT_OBJECT_0 0UL
 #define WAIT_TIMEOUT 258UL
@@ -92,6 +99,8 @@ typedef struct {
 #define ClearCommError fakeWindowsClearCommError
 #define WaitCommEvent fakeWindowsWaitCommEvent
 #define CancelIoEx fakeWindowsCancelIoEx
+#define GetOverlappedResult fakeWindowsGetOverlappedResult
+#define CreateEventA fakeWindowsCreateEventA
 #define GetLastError fakeWindowsGetLastError
 #define CloseHandle fakeWindowsCloseHandle
 #define QueryPerformanceFrequency fakeWindowsQueryPerformanceFrequency
@@ -119,6 +128,10 @@ BOOL ClearCommError(HANDLE handle, LPDWORD pErrors, COMSTAT *pStatus);
 BOOL WaitCommEvent(HANDLE handle, LPDWORD pEventMask,
                    LPOVERLAPPED pOverlapped);
 BOOL CancelIoEx(HANDLE handle, LPOVERLAPPED pOverlapped);
+BOOL GetOverlappedResult(HANDLE handle, LPOVERLAPPED pOverlapped,
+                         LPDWORD pTransferred, BOOL wait);
+HANDLE CreateEventA(LPSECURITY_ATTRIBUTES pAttributes, BOOL manualReset,
+                    BOOL initialState, LPCSTR pName);
 DWORD GetLastError(void);
 BOOL CloseHandle(HANDLE handle);
 BOOL QueryPerformanceFrequency(LARGE_INTEGER *pFrequency);

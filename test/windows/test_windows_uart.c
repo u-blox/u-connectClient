@@ -118,6 +118,29 @@ static bool testReadWriteAndEvents(void)
     uPortUartWake(handle);
     CHECK(gFakeWindows.cancelCalls == 1);
 
+    gFakeWindows.ioPending = TRUE;
+    gFakeWindows.overlappedResult = TRUE;
+    gFakeWindows.overlappedBytes = 4;
+    gFakeWindows.clearCommErrorResult = TRUE;
+    gFakeWindows.queuedBytes = 4;
+    CHECK(uPortUartWrite(handle, data, 4) == 4);
+    CHECK(uPortUartRead(handle, data, sizeof(data), 0) == 4);
+    gFakeWindows.waitCommCalls = 0;
+    CHECK(uPortUartWaitForData(handle, -1) == 1);
+    CHECK(gFakeWindows.waitCommCalls == 0);
+    gFakeWindows.queuedBytes = 0;
+    gFakeWindows.waitEventMask = EV_RXCHAR;
+    unsigned cancelBefore = gFakeWindows.cancelCalls;
+    CHECK(uPortUartWaitForData(handle, -1) == 1);
+    CHECK(gFakeWindows.cancelCalls == cancelBefore);
+    gFakeWindows.waitResult = WAIT_TIMEOUT;
+    gFakeWindows.overlappedResult = FALSE;
+    CHECK(uPortUartWaitForData(handle, -1) == 0);
+    CHECK(gFakeWindows.cancelCalls == cancelBefore + 1);
+    CHECK(uPortUartWrite(handle, data, 4) < 0);
+    gFakeWindows.ioPending = FALSE;
+    gFakeWindows.waitResult = WAIT_OBJECT_0;
+
     CHECK(uPortUartRead(NULL, data, sizeof(data), 0) < 0);
     CHECK(uPortUartRead(handle, NULL, sizeof(data), 0) == 0);
     CHECK(uPortUartRead(handle, data, 0, 0) < 0);

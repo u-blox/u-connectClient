@@ -47,6 +47,9 @@
 
 typedef struct {
     HANDLE hComPort;
+    HANDLE hEvtRead;
+    HANDLE hEvtWrite;
+    HANDLE hEvtWait;
 } uPortUartHandle;
 
 /* ----------------------------------------------------------------
@@ -137,7 +140,7 @@ static HANDLE openComPort(const char *pDevName, int baudRate, bool useFlowContro
 
     // Open COM port
     hComPort = CreateFileA(fullPortName, GENERIC_READ | GENERIC_WRITE, 0, NULL,
-                          OPEN_EXISTING, 0, NULL);
+                          OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
 
     if (hComPort == INVALID_HANDLE_VALUE) {
         DWORD dwError = GetLastError();
@@ -245,7 +248,13 @@ int32_t uPortUartWrite(uPortUartHandle_t handle, const void *pData, size_t lengt
         return -1;
     }
 
-    if (!WriteFile(pHandle->hComPort, pData, (DWORD)length, &dwBytesWritten, NULL)) {
+    OVERLAPPED ov = {0};
+    ov.hEvent = pHandle->hEvtWrite;
+    BOOL ok = WriteFile(pHandle->hComPort, pData, (DWORD)length, &dwBytesWritten, &ov);
+    if (!ok && GetLastError() == ERROR_IO_PENDING) {
+        ok = GetOverlappedResult(pHandle->hComPort, &ov, &dwBytesWritten, TRUE);
+    }
+    if (!ok) {
         DWORD dwError = GetLastError();
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "WriteFile failed, error: %lu", dwError);
         if (dwError == ERROR_ACCESS_DENIED) {
@@ -285,7 +294,13 @@ int32_t uPortUartRead(uPortUartHandle_t handle, void *pData, size_t length, int3
         }
     }
 
-    if (!ReadFile(pHandle->hComPort, pData, (DWORD)length, &dwBytesRead, NULL)) {
+    OVERLAPPED ov = {0};
+    ov.hEvent = pHandle->hEvtRead;
+    BOOL ok = ReadFile(pHandle->hComPort, pData, (DWORD)length, &dwBytesRead, &ov);
+    if (!ok && GetLastError() == ERROR_IO_PENDING) {
+        ok = GetOverlappedResult(pHandle->hComPort, &ov, &dwBytesRead, TRUE);
+    }
+    if (!ok) {
         return -1;
     }
 
@@ -301,7 +316,24 @@ int32_t uPortUartWaitForData(uPortUartHandle_t handle, int32_t timeoutMs)
     if (pHandle == NULL) {
         return -1;
     }
-    if (WaitCommEvent(pHandle->hComPort, &eventMask, NULL)) {
+    OVERLAPPED ov = {0};
+    DWORD dummy = 0;
+    COMSTAT status;
+    DWORD errors;
+
+    /* EV_RXCHAR is not re-raised for bytes already queued, so poll the queue around the wait. */
+    if (ClearCommError(pHandle->hComPort, &errors, &status) && status.cbInQue > 0) {
+        return 1;
+    }
+    ov.hEvent = pHandle->hEvtWait;
+    BOOL ok = WaitCommEvent(pHandle->hComPort, &eventMask, &ov);
+    if (!ok && GetLastError() == ERROR_IO_PENDING) {
+        if (WaitForSingleObject(pHandle->hEvtWait, 20) == WAIT_TIMEOUT) {
+            CancelIoEx(pHandle->hComPort, &ov);
+        }
+        ok = GetOverlappedResult(pHandle->hComPort, &ov, &dummy, TRUE);
+    }
+    if (ok) {
         return (eventMask & EV_RXCHAR) != 0 ? 1 : 0;
     }
     return GetLastError() == ERROR_OPERATION_ABORTED ? 0 : -1;
@@ -335,6 +367,9 @@ uPortUartHandle_t uPortUartOpen(const char *pDevName, int32_t baudRate, bool use
         free(pHandle);
         return NULL;
     }
+    pHandle->hEvtRead = CreateEventA(NULL, TRUE, FALSE, NULL);
+    pHandle->hEvtWrite = CreateEventA(NULL, TRUE, FALSE, NULL);
+    pHandle->hEvtWait = CreateEventA(NULL, TRUE, FALSE, NULL);
 
     return (uPortUartHandle_t)pHandle;
 }
@@ -351,6 +386,9 @@ void uPortUartClose(uPortUartHandle_t handle)
         CloseHandle(pHandle->hComPort);
         pHandle->hComPort = INVALID_HANDLE_VALUE;
     }
+    CloseHandle(pHandle->hEvtRead);
+    CloseHandle(pHandle->hEvtWrite);
+    CloseHandle(pHandle->hEvtWait);
 
     free(pHandle);
 }
