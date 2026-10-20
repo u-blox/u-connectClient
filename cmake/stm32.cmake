@@ -52,7 +52,7 @@ endif()
 
 # STM32 port directory and family-specific sources
 if(STM32_FAMILY_SHORT STREQUAL "H7")
-    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32h7)
+    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32h7)
 
     if(STM32_TRANSPORT STREQUAL "spi")
         list(APPEND STM32_HAL_SOURCES ${STM32_HAL_PATH}/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi.c)
@@ -71,19 +71,19 @@ if(STM32_FAMILY_SHORT STREQUAL "H7")
 
     if(STM32_TRANSPORT STREQUAL "spi")
         set(STM32_PORT_SOURCES
-            ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
-            ${CMAKE_CURRENT_SOURCE_DIR}/../ports/spi/u_port_spi_stm32h7.c
-            ${CMAKE_CURRENT_SOURCE_DIR}/../ports/spi/u_cx_spi_transport_master.c
-            ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_spi_transport.c
+            ${CMAKE_CURRENT_LIST_DIR}/../ports/os/u_port_freertos.c
+            ${CMAKE_CURRENT_LIST_DIR}/../ports/spi/u_port_spi_stm32h7.c
+            ${CMAKE_CURRENT_LIST_DIR}/../ports/spi/u_cx_spi_transport_master.c
+            ${CMAKE_CURRENT_LIST_DIR}/../ports/uart/u_port_uart_spi_transport.c
         )
     else()
         set(STM32_PORT_SOURCES
-            ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
-            ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32h7.c
+            ${CMAKE_CURRENT_LIST_DIR}/../ports/os/u_port_freertos.c
+            ${CMAKE_CURRENT_LIST_DIR}/../ports/uart/u_port_uart_stm32h7.c
         )
     endif()
 elseif(STM32_FAMILY_SHORT STREQUAL "F7")
-    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32f7)
+    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32f7)
 
     set(STM32_COMMON_SRC
         ${STM32_PORT_EXTRA_DIR}/src/system_stm32f7xx.c
@@ -97,11 +97,11 @@ elseif(STM32_FAMILY_SHORT STREQUAL "F7")
     )
 
     set(STM32_PORT_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32f7.c
+        ${CMAKE_CURRENT_LIST_DIR}/../ports/os/u_port_freertos.c
+        ${CMAKE_CURRENT_LIST_DIR}/../ports/uart/u_port_uart_stm32f7.c
     )
 else()
-    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32f4)
+    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32f4)
 
     set(STM32_COMMON_SRC
         ${STM32_PORT_EXTRA_DIR}/src/system_stm32f4xx.c
@@ -115,13 +115,13 @@ else()
     )
 
     if(STM32_UART_USE_DMA)
-        set(STM32_UART_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32f4_dma.c)
+        set(STM32_UART_SRC ${CMAKE_CURRENT_LIST_DIR}/../ports/uart/u_port_uart_stm32f4_dma.c)
     else()
-        set(STM32_UART_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32f4_irq.c)
+        set(STM32_UART_SRC ${CMAKE_CURRENT_LIST_DIR}/../ports/uart/u_port_uart_stm32f4_irq.c)
     endif()
 
     set(STM32_PORT_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
+        ${CMAKE_CURRENT_LIST_DIR}/../ports/os/u_port_freertos.c
         ${STM32_UART_SRC}
     )
 endif()
@@ -137,7 +137,7 @@ set(STM32_INCLUDE_DIRS
 # is) - needed so ports/uart/u_port_uart_spi_transport.c can #include
 # "u_port_spi.h" / "u_cx_spi_transport_master.h" from the sibling ports/spi/ dir.
 if((STM32_FAMILY_SHORT STREQUAL "H7") AND (STM32_TRANSPORT STREQUAL "spi"))
-    list(APPEND STM32_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../ports/spi)
+    list(APPEND STM32_INCLUDE_DIRS ${CMAKE_CURRENT_LIST_DIR}/../ports/spi)
 endif()
 
 # STM32 compile definitions
