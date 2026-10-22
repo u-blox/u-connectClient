@@ -137,7 +137,7 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     pHandle->huart.Init.Parity = UART_PARITY_NONE;
     pHandle->huart.Init.Mode = UART_MODE_TX_RX;
     pHandle->huart.Init.HwFlowCtl = useFlowControl ? UART_HWCONTROL_RTS_CTS : UART_HWCONTROL_NONE;
-#if defined(USART_CR1_OVER8)
+#if !defined(STM32F103xB)   /* the F1 UART has no oversampling setting */
     pHandle->huart.Init.OverSampling = UART_OVERSAMPLING_16;
 #endif
 
