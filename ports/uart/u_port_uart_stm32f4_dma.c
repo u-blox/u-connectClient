@@ -174,8 +174,8 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
 #if defined(NUCLEO_F439ZI)
     // NUCLEO-F439ZI: USART6 on PG9/PG14 (CN10 Arduino D0/D1)
     __HAL_RCC_GPIOG_CLK_ENABLE();
-#elif defined(ODIN_W26) || defined(STM32F439xx)
-    // ODIN-W26/ODIN-W2: USART1 on PA9/PA10 (SPA UART)
+#elif defined(STM32F439xx)
+    // ODIN-W2 EVK: USART1 on PA9/PA10 (SPA UART)
     __HAL_RCC_GPIOA_CLK_ENABLE();
 #else
     // F407/F429: USART3 on PB10/PB11
@@ -390,10 +390,10 @@ extern void ConsoleInput_ProcessByte(uint8_t byte);
 extern uint8_t* ConsoleInput_GetRxByteBuffer(void);
 
 // Debug UART handle from debug_uart.c
-// - ODIN-W26/F439 (ODIN-W2): USART3 on PD8/PD9
+// - F439 (ODIN-W2 EVK): USART3 on PD8/PD9
 // - F407/F429: USART2 on PA2/PA3
-#if defined(ODIN_W26) || defined(STM32F439xx)
-extern UART_HandleTypeDef huart3;  // ODIN-W26/ODIN-W2: Debug on USART3
+#if defined(STM32F439xx)
+extern UART_HandleTypeDef huart3;  // ODIN-W2 EVK: Debug on USART3
 #define DEBUG_UART_INSTANCE USART3
 #define DEBUG_UART_HANDLE huart3
 #else
@@ -403,7 +403,6 @@ extern UART_HandleTypeDef huart2;  // F407/F429: Debug on USART2
 #endif
 #endif /* !NUCLEO_F439ZI */
 
-/**
 /**
  * @brief DMA transfer complete callback (circular mode = buffer wrap)
  *

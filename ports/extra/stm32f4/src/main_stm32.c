@@ -53,8 +53,12 @@ int main(void)
     printf("\r\n===========================================\r\n");
 #if defined(NUCLEO_F439ZI)
     printf("NUCLEO-F439ZI u-connectClient - Starting...\r\n");
+#elif defined(NUCLEO_F401RE)
+    printf("NUCLEO-F401RE u-connectClient - Starting...\r\n");
+#elif defined(NUCLEO_F446RE)
+    printf("NUCLEO-F446RE u-connectClient - Starting...\r\n");
 #else
-    printf("STM32F407 u-connectClient - Starting...\r\n");
+    printf("STM32F4DISCOVERY u-connectClient - Starting...\r\n");
 #endif
     printf("===========================================\r\n");
     printf("Creating FreeRTOS task...\r\n");
@@ -113,7 +117,11 @@ static void SystemClock_Config(void)
   /* The voltage scaling allows optimizing the power consumption when the device is
      clocked below the maximum system frequency, to update the voltage scaling value
      regarding system frequency refer to product datasheet.  */
+#if defined(NUCLEO_F401RE)
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);   /* highest scale on the F401 (84 MHz) */
+#else
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+#endif
 
 #if defined(NUCLEO_F439ZI)
   /* NUCLEO-F439ZI: 8 MHz clock from ST-LINK MCO on HSE input (bypass mode).
@@ -126,13 +134,32 @@ static void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLN = 336;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 7;
+#elif defined(NUCLEO64)
+  /* NUCLEO-64: no HSE crystal fitted, so run from HSI (16 MHz).
+   * F401: 16 / M=16 * N=336 / P=4 = 84 MHz; F446: P=2 = 168 MHz. Q=7 -> 48 MHz. */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = 16;
+  RCC_OscInitStruct.PLL.PLLN = 336;
+#if defined(NUCLEO_F401RE)
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+#else
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+#endif
+  RCC_OscInitStruct.PLL.PLLQ = 7;
+#if defined(RCC_PLLR_SUPPORT)
+  RCC_OscInitStruct.PLL.PLLR = 2;
+#endif
 #else
   /* Enable HSE Oscillator and activate PLL with HSE as source */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLM = 25;
+  RCC_OscInitStruct.PLL.PLLM = HSE_VALUE / 1000000U;
   RCC_OscInitStruct.PLL.PLLN = 336;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 7;
@@ -144,9 +171,15 @@ static void SystemClock_Config(void)
   RCC_ClkInitStruct.ClockType = (RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2);
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+#if defined(NUCLEO_F401RE)
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+  HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2);
+#else
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
   HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5);
+#endif
 
   /* STM32F405x/407x/415x/417x Revision Z and upper devices: prefetch is supported  */
   if (HAL_GetREVID() >= 0x1001)
@@ -323,6 +356,25 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     else if (huart->Instance == USART3)
     {
         /* USART3 (console) already initialized in Console_UART_Init */
+    }
+#elif defined(NUCLEO64)
+    if (huart->Instance == USART1)
+    {
+        /* NUCLEO-64: PA9 TX (Arduino D8), PA10 RX (Arduino D2),
+         * PA11 CTS / PA12 RTS (CN10 morpho), AF7. USART2 is the ST-LINK VCP. */
+        __HAL_RCC_GPIOA_CLK_ENABLE();
+        __HAL_RCC_USART1_CLK_ENABLE();
+
+        GPIO_InitStruct.Pin = GPIO_PIN_9 | GPIO_PIN_10;
+        if (huart->Init.HwFlowCtl == UART_HWCONTROL_RTS_CTS)
+        {
+            GPIO_InitStruct.Pin |= GPIO_PIN_11 | GPIO_PIN_12;
+        }
+        GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+        GPIO_InitStruct.Pull = GPIO_NOPULL;
+        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+        GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
+        HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
     }
 #else
     if (huart->Instance == USART3)

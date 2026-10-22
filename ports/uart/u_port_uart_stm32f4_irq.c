@@ -34,9 +34,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(STM32F103xB)
+#include "stm32f1xx_hal.h"   /* NUCLEO-F103RB: same USART register model as F4 */
+#elif defined(STM32G071xx)
+#include "stm32g0xx_hal.h"
+#else
 #include "stm32f4xx_hal.h"
+#endif
 #include "u_port_uart.h"
 #include "u_port_uart_stm32f4.h"
+
+/* Below configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY (5) so the ISR may use FreeRTOS calls */
+#ifndef U_PORT_UART_IRQ_PRIORITY
+#define U_PORT_UART_IRQ_PRIORITY 6
+#endif
 
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
@@ -126,7 +137,9 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     pHandle->huart.Init.Parity = UART_PARITY_NONE;
     pHandle->huart.Init.Mode = UART_MODE_TX_RX;
     pHandle->huart.Init.HwFlowCtl = useFlowControl ? UART_HWCONTROL_RTS_CTS : UART_HWCONTROL_NONE;
+#if !defined(STM32F103xB)   /* the F1 UART has no oversampling setting */
     pHandle->huart.Init.OverSampling = UART_OVERSAMPLING_16;
+#endif
 
     if (HAL_UART_Init(&pHandle->huart) != HAL_OK) {
         U_PORT_UART_CLK_DISABLE();
@@ -137,7 +150,7 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     // Enable UART interrupt
     // Priority must be >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY (5) for FreeRTOS compatibility
     // Using priority 6 to ensure it's lower priority than FreeRTOS syscalls
-    HAL_NVIC_SetPriority(U_PORT_UART_IRQn, 6, 0);
+    HAL_NVIC_SetPriority(U_PORT_UART_IRQn, U_PORT_UART_IRQ_PRIORITY, 0);
     HAL_NVIC_EnableIRQ(U_PORT_UART_IRQn);
 
     pHandle->isOpen = true;
