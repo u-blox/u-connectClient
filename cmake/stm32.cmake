@@ -45,7 +45,7 @@ endif()
 
 # STM32 port directory and family-specific sources
 if(STM32_FAMILY_SHORT STREQUAL "H7")
-    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32h7)
+    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32h7)
 
     set(STM32_COMMON_SRC
         ${STM32_PORT_EXTRA_DIR}/src/system_stm32h7xx.c
@@ -59,11 +59,11 @@ if(STM32_FAMILY_SHORT STREQUAL "H7")
     )
 
     set(STM32_PORT_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32h7.c
+        ${CMAKE_CURRENT_LIST_DIR}/../ports/os/u_port_freertos.c
+        ${CMAKE_CURRENT_LIST_DIR}/../ports/uart/u_port_uart_stm32h7.c
     )
 elseif(STM32_FAMILY_SHORT STREQUAL "F7")
-    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32f7)
+    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32f7)
 
     set(STM32_COMMON_SRC
         ${STM32_PORT_EXTRA_DIR}/src/system_stm32f7xx.c
@@ -77,11 +77,11 @@ elseif(STM32_FAMILY_SHORT STREQUAL "F7")
     )
 
     set(STM32_PORT_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32f7.c
+        ${CMAKE_CURRENT_LIST_DIR}/../ports/os/u_port_freertos.c
+        ${CMAKE_CURRENT_LIST_DIR}/../ports/uart/u_port_uart_stm32f7.c
     )
 else()
-    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32f4)
+    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32f4)
 
     set(STM32_COMMON_SRC
         ${STM32_PORT_EXTRA_DIR}/src/system_stm32f4xx.c
@@ -95,13 +95,13 @@ else()
     )
 
     if(STM32_UART_USE_DMA)
-        set(STM32_UART_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32f4_dma.c)
+        set(STM32_UART_SRC ${CMAKE_CURRENT_LIST_DIR}/../ports/uart/u_port_uart_stm32f4_dma.c)
     else()
-        set(STM32_UART_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32f4_irq.c)
+        set(STM32_UART_SRC ${CMAKE_CURRENT_LIST_DIR}/../ports/uart/u_port_uart_stm32f4_irq.c)
     endif()
 
     set(STM32_PORT_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
+        ${CMAKE_CURRENT_LIST_DIR}/../ports/os/u_port_freertos.c
         ${STM32_UART_SRC}
     )
 endif()
