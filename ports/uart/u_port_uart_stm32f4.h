@@ -43,7 +43,35 @@ extern "C" {
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
 
-#if defined(NUCLEO_F439ZI)
+#if defined(G071RB)
+
+/**
+ * NUCLEO-G071RB: u-blox module on USART1, PA9/D8 (TX) / PA10/D2 (RX),
+ * PA11 (CTS) / PA12 (RTS), AF1, set up in HAL_UART_MspInit(). Console uses
+ * USART2 PA2/PA3 (ST-LINK VCP) - see stm32g0 main_stm32.c.
+ */
+#define U_PORT_UART_INSTANCE    USART1
+#define U_PORT_UART_IRQn        USART1_IRQn
+#define U_PORT_UART_IRQHandler  USART1_IRQHandler
+#define U_PORT_UART_CLK_ENABLE  __HAL_RCC_USART1_CLK_ENABLE
+#define U_PORT_UART_CLK_DISABLE __HAL_RCC_USART1_CLK_DISABLE
+/* Cortex-M0+ has 2 priority bits */
+#define U_PORT_UART_IRQ_PRIORITY 3
+
+#elif defined(NUCLEO_F103RB)
+
+/**
+ * NUCLEO-F103RB: u-blox module on USART1, PA9/D8 (TX) / PA10/D2 (RX),
+ * PA11 (CTS) / PA12 (RTS). Pins are set up in HAL_UART_MspInit() (F1 has no
+ * AF numbers). Console uses USART2 PA2/PA3 (ST-LINK VCP) - see stm32f1 main_stm32.c.
+ */
+#define U_PORT_UART_INSTANCE    USART1
+#define U_PORT_UART_IRQn        USART1_IRQn
+#define U_PORT_UART_IRQHandler  USART1_IRQHandler
+#define U_PORT_UART_CLK_ENABLE  __HAL_RCC_USART1_CLK_ENABLE
+#define U_PORT_UART_CLK_DISABLE __HAL_RCC_USART1_CLK_DISABLE
+
+#elif defined(NUCLEO_F439ZI)
 
 /**
  * NUCLEO-F439ZI: u-blox module on USART6, PG14 (TX) / PG9 (RX), AF8.
@@ -96,8 +124,8 @@ extern "C" {
 #define U_PORT_UART_RX_PORT     GPIOB
 #define U_PORT_UART_RX_PIN      GPIO_PIN_7
 #define U_PORT_UART_GPIO_AF     GPIO_AF7_USART1
-#elif defined(ODIN_W26) || defined(STM32F439xx)
-// ODIN-W2 EVK: USART1 for NORA-W36 (SPA UART)
+#elif defined(ODIN_W26) || defined(STM32F439xx) || defined(NUCLEO64)
+// ODIN-W2 EVK: USART1 for NORA-W36 (SPA UART); NUCLEO-64: USART1 on D8/D2 (CN10 PA11/PA12 for CTS/RTS)
 #define U_PORT_UART_INSTANCE    USART1
 #define U_PORT_UART_IRQn        USART1_IRQn
 #define U_PORT_UART_IRQHandler  USART1_IRQHandler

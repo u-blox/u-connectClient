@@ -23,6 +23,14 @@ elseif(STM32_BOARD STREQUAL "nucleo_f767zi")
     include(${CMAKE_CURRENT_LIST_DIR}/stm32f767zi.cmake)
 elseif(STM32_BOARD STREQUAL "nucleo_f439zi")
     include(${CMAKE_CURRENT_LIST_DIR}/stm32f439zi.cmake)
+elseif(STM32_BOARD STREQUAL "nucleo_f103rb")
+    include(${CMAKE_CURRENT_LIST_DIR}/stm32f103rb.cmake)
+elseif(STM32_BOARD STREQUAL "nucleo_g071rb")
+    include(${CMAKE_CURRENT_LIST_DIR}/stm32g071rb.cmake)
+elseif(STM32_BOARD STREQUAL "nucleo_f401re")
+    include(${CMAKE_CURRENT_LIST_DIR}/stm32f401re.cmake)
+elseif(STM32_BOARD STREQUAL "nucleo_f446re")
+    include(${CMAKE_CURRENT_LIST_DIR}/stm32f446re.cmake)
 else()
     include(${CMAKE_CURRENT_LIST_DIR}/stm32f407vg.cmake)
 endif()
@@ -80,19 +88,40 @@ elseif(STM32_FAMILY_SHORT STREQUAL "F7")
         ${CMAKE_CURRENT_LIST_DIR}/../ports/os/u_port_freertos.c
         ${CMAKE_CURRENT_LIST_DIR}/../ports/uart/u_port_uart_stm32f7.c
     )
+elseif(STM32_FAMILY_SHORT STREQUAL "F1" OR STM32_FAMILY_SHORT STREQUAL "G0")
+    # NUCLEO-F103RB / NUCLEO-G071RB: own startup glue, newlib stubs shared with F4, F4 interrupt-driven UART port
+    string(TOLOWER "${STM32_FAMILY_SHORT}" _fam)
+    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32${_fam})
+
+    set(STM32_COMMON_SRC
+        ${STM32_HAL_PATH}/Drivers/CMSIS/Device/ST/${STM32_FAMILY}/Source/Templates/system_stm32${_fam}xx.c
+        ${STM32_PORT_EXTRA_DIR}/src/stm32${_fam}xx_it.c
+        ${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32f4/src/sysmem.c
+        ${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32f4/src/syscalls.c
+        ${STM32_STARTUP_FILE}
+        ${STM32_HAL_SOURCES}
+        ${FREERTOS_SOURCES}
+    )
+
+    set(STM32_PORT_SOURCES
+        ${CMAKE_CURRENT_LIST_DIR}/../ports/os/u_port_freertos.c
+        ${CMAKE_CURRENT_LIST_DIR}/../ports/uart/u_port_uart_stm32f4_irq.c
+    )
 else()
     set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32f4)
 
     set(STM32_COMMON_SRC
         ${STM32_PORT_EXTRA_DIR}/src/system_stm32f4xx.c
         ${STM32_PORT_EXTRA_DIR}/src/stm32f4xx_it.c
-        ${STM32_PORT_EXTRA_DIR}/src/stm32f4xx_hal_timebase_tim.c
         ${STM32_PORT_EXTRA_DIR}/src/sysmem.c
         ${STM32_PORT_EXTRA_DIR}/src/syscalls.c
         ${STM32_STARTUP_FILE}
         ${STM32_HAL_SOURCES}
         ${FREERTOS_SOURCES}
     )
+    if(NOT STM32_NO_TIM_TIMEBASE)
+        list(APPEND STM32_COMMON_SRC ${STM32_PORT_EXTRA_DIR}/src/stm32f4xx_hal_timebase_tim.c)
+    endif()
 
     if(STM32_UART_USE_DMA)
         set(STM32_UART_SRC ${CMAKE_CURRENT_LIST_DIR}/../ports/uart/u_port_uart_stm32f4_dma.c)
@@ -123,6 +152,9 @@ elseif(STM32_FAMILY_SHORT STREQUAL "F7")
 elseif(STM32_BOARD STREQUAL "nucleo_f439zi")
     # NUCLEO-F439ZI: NORA-W36 on CN10 Arduino D0/D1 = PG9/PG14 = USART6
     set(STM32_EXAMPLE_UART "USART6")
+elseif(STM32_BOARD MATCHES "^nucleo_(f103rb|g071rb|f4[0-9][0-9]re)$")
+    # NUCLEO-64: NORA-W36 on Arduino D8/D2 = PA9/PA10 = USART1 (USART2 is the ST-LINK VCP)
+    set(STM32_EXAMPLE_UART "USART1")
 else()
     set(STM32_EXAMPLE_UART "USART3")
 endif()
@@ -133,13 +165,20 @@ set(STM32_COMPILE_DEFINITIONS
 )
 
 # STM32 compile options (CPU flags come from the board file)
+# The F103 and G071 have 128 KB of flash, so it is built for size with newlib-nano and dead-code removal.
+if(STM32_FAMILY_SHORT STREQUAL "F1" OR STM32_FAMILY_SHORT STREQUAL "G0")
+    set(STM32_OPT_FLAGS -Os -g -ffunction-sections -fdata-sections)
+    set(STM32_EXTRA_LINK_FLAGS "-specs=nano.specs -specs=nosys.specs -Wl,--gc-sections")
+else()
+    set(STM32_OPT_FLAGS -Og -g3)
+    set(STM32_EXTRA_LINK_FLAGS "")
+endif()
 separate_arguments(STM32_CPU_FLAGS_LIST NATIVE_COMMAND "${CPU_FLAGS}")
 set(STM32_COMPILE_OPTIONS
     ${STM32_CPU_FLAGS_LIST}
     -Wall
     -Wextra
-    -Og
-    -g3
+    ${STM32_OPT_FLAGS}
 )
 
 # Function to add an STM32 example target
@@ -176,7 +215,7 @@ function(add_stm32_example)
         OUTPUT_NAME "${ARG_NAME}"
         SUFFIX ".elf"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/../bin"
-        LINK_FLAGS "${CPU_FLAGS} -T${STM32_LINKER_SCRIPT} -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/../bin/${ARG_NAME}.map,--no-warn-rwx-segments"
+        LINK_FLAGS "${CPU_FLAGS} ${STM32_EXTRA_LINK_FLAGS} -T${STM32_LINKER_SCRIPT} -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/../bin/${ARG_NAME}.map,--no-warn-rwx-segments"
     )
 
     # Apply compile definitions
@@ -193,6 +232,11 @@ function(add_stm32_example)
         ${U_CONNECT_CLIENT_INC}
         ${U_CONNECT_CLIENT_PORT_DIR}
         ${STM32_INCLUDE_DIRS}
+    )
+
+    # Vendor HAL, FreeRTOS and CubeMX-generated stubs are not ours to fix
+    set_source_files_properties(${STM32_COMMON_SRC} PROPERTIES
+        COMPILE_OPTIONS "-w"
     )
 
     # Ensure assembly files use the same CPU flags

@@ -404,7 +404,6 @@ extern UART_HandleTypeDef huart2;  // F407/F429: Debug on USART2
 #endif /* !NUCLEO_F439ZI */
 
 /**
-/**
  * @brief DMA transfer complete callback (circular mode = buffer wrap)
  *
  * UART assignments:

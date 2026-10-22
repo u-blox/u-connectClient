@@ -164,7 +164,7 @@ void DMA2_Stream1_IRQHandler(void)
   uPortUartDma_IRQHandler();
 }
 
-#elif defined(ODIN_W26) || defined(STM32F439xx)
+#elif defined(ODIN_W26) || defined(STM32F439xx) || defined(NUCLEO64)
 
 /**
   * @brief This function handles USART1 global interrupt (u-blox module).
