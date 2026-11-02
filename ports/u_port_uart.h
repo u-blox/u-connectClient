@@ -105,6 +105,16 @@ int32_t uPortUartWaitForData(uPortUartHandle_t handle, int32_t timeoutMs);
 /** Cancel a pending uPortUartWaitForData() call. */
 void uPortUartWake(uPortUartHandle_t handle);
 
+/**
+ * @brief Drive the DTR output (host ports only).
+ *
+ * Asserted DTR is a low level on the wire. u-blox EVKs route it to the
+ * module UART_DSR / WAKE_UP pin.
+ *
+ * @return 0 on success, negative when the port has no DTR line.
+ */
+int32_t uPortUartSetDtr(uPortUartHandle_t handle, bool asserted);
+
 /** Notify the OS RX worker that UART data arrived from interrupt context. */
 void uPortUartRxSignalFromIsr(void);
 

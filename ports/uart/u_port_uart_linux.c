@@ -26,6 +26,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 #include <termios.h>
 
@@ -298,6 +299,16 @@ int32_t uPortUartWaitForData(uPortUartHandle_t handle, int32_t timeoutMs)
         return 1;
     }
     return -1;
+}
+
+int32_t uPortUartSetDtr(uPortUartHandle_t handle, bool asserted)
+{
+    uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+    int bits = TIOCM_DTR;
+    if (pHandle == NULL || pHandle->fd < 0) {
+        return -1;
+    }
+    return ioctl(pHandle->fd, asserted ? TIOCMBIS : TIOCMBIC, &bits) == 0 ? 0 : -1;
 }
 
 void uPortUartWake(uPortUartHandle_t handle)

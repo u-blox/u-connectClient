@@ -260,6 +260,15 @@ void uPortUartWake(uPortUartHandle_t handle)
     }
 }
 
+int32_t uPortUartSetDtr(uPortUartHandle_t handle, bool asserted)
+{
+    uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+    if (pHandle == NULL || pHandle->hComPort == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    return EscapeCommFunction(pHandle->hComPort, asserted ? SETDTR : CLRDTR) ? 0 : -1;
+}
+
 uPortUartHandle_t uPortUartOpen(const char *pDevName, int32_t baudRate, bool useFlowControl)
 {
     if (pDevName == NULL) {
