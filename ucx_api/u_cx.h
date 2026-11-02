@@ -23,9 +23,18 @@ extern "C" {
  * TYPES
  * -------------------------------------------------------------- */
 
+struct uCxHandle;
+
+/** Channel Sounding initiator events (u_cx_channel_sounding_initiator.h); not generated. */
+typedef void (*uCxCsDistance_t)(struct uCxHandle *puCxHandle, int32_t connHandle, int32_t distanceMm);
+typedef void (*uCxCsPct_t)(struct uCxHandle *puCxHandle, int32_t connHandle, int32_t antenna,
+                           int32_t validChannels, const uint8_t *pData, size_t dataLen);
+
 typedef struct uCxHandle {
     uCxAtClient_t *pAtClient;
     uUrcCallbacks callbacks;
+    uCxCsDistance_t csDistance;
+    uCxCsPct_t csPct;
 } uCxHandle_t;
 
 /* ----------------------------------------------------------------

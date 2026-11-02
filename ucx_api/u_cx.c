@@ -9,6 +9,7 @@
 
 #include "u_cx_log.h"
 #include "u_cx_urc.h"
+#include "u_cx_channel_sounding_initiator.h"
 
 #include "u_cx.h"
 
@@ -37,8 +38,6 @@ static void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine, si
 {
     (void)pClient;
     (void)pTag;
-    (void)pBinaryData;
-    (void)binaryDataLen;
     uCxHandle_t *puCxHandle = (uCxHandle_t *)pTag;
     char *pParams = pLine;
     size_t paramLen = lineLength;
@@ -56,6 +55,9 @@ static void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine, si
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance,
                     "Received URC '%s', params: '%s'", pLine, pParams);
+    if (uCxChannelSoundingInitiatorUrc(puCxHandle, pLine, pParams, pBinaryData, binaryDataLen)) {
+        return;
+    }
     uCxUrcParse(puCxHandle, pLine, pParams, paramLen);
 }
 
