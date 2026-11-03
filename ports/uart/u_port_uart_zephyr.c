@@ -35,7 +35,20 @@
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
 
-#define U_RINGBUFFER_SIZE   128
+#ifndef U_PORT_UART_RX_BUFFER_SIZE
+/** RX ring size; 4 KB holds ~4 ms at 921600 baud plus the AT client's
+ *  scheduling latency. Override with -DU_PORT_UART_RX_BUFFER_SIZE=... */
+# define U_PORT_UART_RX_BUFFER_SIZE   4096
+#endif
+
+#ifndef U_PORT_UART_TX_BUFFER_SIZE
+# define U_PORT_UART_TX_BUFFER_SIZE   1024
+#endif
+
+#ifndef U_PORT_UART_TX_TIMEOUT_MS
+/** Max time uPortUartWrite() waits for TX ring space (e.g. CTS held off). */
+# define U_PORT_UART_TX_TIMEOUT_MS    5000
+#endif
 
 /* ----------------------------------------------------------------
  * TYPES
@@ -46,8 +59,12 @@
 typedef struct {
     const struct device *pUartDev;
     struct ring_buf rxRingBuf;
+    struct ring_buf txRingBuf;
     struct k_sem rxSem;
-    uint8_t rxBuffer[U_RINGBUFFER_SIZE];
+    struct k_sem txSem;
+    struct k_mutex txMutex;
+    uint8_t rxBuffer[U_PORT_UART_RX_BUFFER_SIZE];
+    uint8_t txBuffer[U_PORT_UART_TX_BUFFER_SIZE];
 } uPortUartHandle;
 
 /* ----------------------------------------------------------------
@@ -80,15 +97,27 @@ static void uartIsr(const struct device *dev, void *user_data)
     while (uart_irq_rx_ready(dev) && (ret > 0)) {
         uint8_t *pData;
         signalRxWorker = true;
-        ret = ring_buf_put_ptr(&pHandle->rxRingBuf, &pData, 0);
+        ret = (int)ring_buf_put_ptr(&pHandle->rxRingBuf, &pData, 0);
         if (ret == 0) {
             // Ring buffer full
             uart_irq_rx_disable(dev);
         } else {
             ret = uart_fifo_read(dev, pData, ret);
         }
-        ring_buf_commit(&pHandle->rxRingBuf, (ret > 0) ? ret : 0);
+        ring_buf_commit(&pHandle->rxRingBuf, (ret > 0) ? (size_t)ret : 0);
         uart_irq_update(dev);
+    }
+
+    if (uart_irq_tx_ready(dev)) {
+        uint8_t *pData;
+        uint32_t len = ring_buf_get_ptr(&pHandle->txRingBuf, &pData, 0);
+        if (len == 0) {
+            uart_irq_tx_disable(dev);
+        } else {
+            int sent = uart_fifo_fill(dev, pData, (int)len);
+            ring_buf_consume(&pHandle->txRingBuf, (sent > 0) ? (size_t)sent : 0);
+        }
+        k_sem_give(&pHandle->txSem);
     }
 
     if (signalRxWorker) {
@@ -144,7 +173,10 @@ uPortUartHandle_t uPortUartOpen(const char *pDevName, int32_t baudRate, bool use
 
     // Initialize ring buffer and semaphore
     ring_buf_init(&pHandle->rxRingBuf, sizeof(pHandle->rxBuffer), pHandle->rxBuffer);
+    ring_buf_init(&pHandle->txRingBuf, sizeof(pHandle->txBuffer), pHandle->txBuffer);
     k_sem_init(&pHandle->rxSem, 0, 1);
+    k_sem_init(&pHandle->txSem, 0, 1);
+    k_mutex_init(&pHandle->txMutex);
 
     // Set up interrupt callback
     if (uart_irq_callback_user_data_set(pHandle->pUartDev, uartIsr, pHandle) < 0) {
@@ -162,6 +194,12 @@ void uPortUartClose(uPortUartHandle_t handle)
 {
     if (handle != NULL) {
         uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+        // Let queued TX drain before shutting the interrupts off
+        int64_t endMs = k_uptime_get() + 100;
+        while (!ring_buf_is_empty(&pHandle->txRingBuf) && (k_uptime_get() < endMs)) {
+            k_sleep(K_MSEC(1));
+        }
+        uart_irq_tx_disable(pHandle->pUartDev);
         uart_irq_rx_disable(pHandle->pUartDev);
         pHandle->pUartDev = NULL;
     }
@@ -175,8 +213,34 @@ int32_t uPortUartWrite(uPortUartHandle_t handle,
         return -1;
     }
 
+    // uart_fifo_fill() may only be called from the ISR and accepts as many
+    // bytes as the hardware FIFO has room for (often 1 on STM32), so queue
+    // everything in the TX ring and let the ISR drain it. Returns the full
+    // length unless the transmitter stalls for U_PORT_UART_TX_TIMEOUT_MS.
     uPortUartHandle *pHandle = (uPortUartHandle *)handle;
-    return (int32_t)uart_fifo_fill(pHandle->pUartDev, pData, length);
+    const uint8_t *pBytes = (const uint8_t *)pData;
+    size_t written = 0;
+    int64_t lastProgressMs = k_uptime_get();
+
+    k_mutex_lock(&pHandle->txMutex, K_FOREVER);
+    while (written < length) {
+        uint32_t put = ring_buf_put(&pHandle->txRingBuf, &pBytes[written],
+                                    (uint32_t)(length - written));
+        if (put > 0) {
+            written += put;
+            lastProgressMs = k_uptime_get();
+            uart_irq_tx_enable(pHandle->pUartDev);
+        } else {
+            if ((k_uptime_get() - lastProgressMs) > U_PORT_UART_TX_TIMEOUT_MS) {
+                break;
+            }
+            uart_irq_tx_enable(pHandle->pUartDev);
+            k_sem_take(&pHandle->txSem, K_MSEC(10));
+        }
+    }
+    k_mutex_unlock(&pHandle->txMutex);
+
+    return (written > 0) ? (int32_t)written : -1;
 }
 
 int32_t uPortUartRead(uPortUartHandle_t handle,

@@ -61,4 +61,6 @@
  * PUBLIC FUNCTIONS
  * -------------------------------------------------------------- */
 
+int32_t uPortGetTickTimeMs(void);
+
 #endif
