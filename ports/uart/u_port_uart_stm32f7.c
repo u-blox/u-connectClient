@@ -156,6 +156,10 @@ static void startRxDma(uPortUartHandle *pHandle)
     pHandle->rxWraps = 0;
     HAL_UART_Receive_DMA(&pHandle->huart, gUcxRxDmaBuffer,
                          U_PORT_UART_RX_BUFFER_SIZE);
+    // DMA gives no per-byte interrupt; the idle line tells the RX task that
+    // data (e.g. a URC) has arrived.
+    __HAL_UART_CLEAR_IDLEFLAG(&pHandle->huart);
+    __HAL_UART_ENABLE_IT(&pHandle->huart, UART_IT_IDLE);
 }
 
 /* ----------------------------------------------------------------
@@ -357,6 +361,17 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (gpUartHandle != NULL && huart->Instance == gpUartHandle->huart.Instance) {
         gpUartHandle->rxWraps++;
+        uPortUartRxSignalFromIsr();
+    }
+}
+
+/**
+ * @brief DMA half transfer callback
+ */
+void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (gpUartHandle != NULL && huart->Instance == gpUartHandle->huart.Instance) {
+        uPortUartRxSignalFromIsr();
     }
 }
 
@@ -403,7 +418,15 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 void uPortUart_IRQHandler(void)
 {
     if (gpUartHandle != NULL) {
+        bool idle = __HAL_UART_GET_FLAG(&gpUartHandle->huart, UART_FLAG_IDLE) &&
+                    __HAL_UART_GET_IT_SOURCE(&gpUartHandle->huart, UART_IT_IDLE);
+        if (idle) {
+            __HAL_UART_CLEAR_IDLEFLAG(&gpUartHandle->huart);
+        }
         HAL_UART_IRQHandler(&gpUartHandle->huart);
+        if (idle) {
+            uPortUartRxSignalFromIsr();
+        }
     }
 }
 
