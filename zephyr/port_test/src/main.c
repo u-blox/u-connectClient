@@ -35,7 +35,7 @@
 
 #define U_RINGBUFFER_SIZE       128
 
-#define TEST_DATA_SIZE          (U_RINGBUFFER_SIZE * 2)
+#define TEST_DATA_SIZE          (EMUL_UART_TX_FIFO_SIZE + U_RINGBUFFER_SIZE)
 #define MODEM_THREAD_STACK_SIZE 4096
 #define MODEM_THREAD_PRIORITY   5
 
@@ -309,13 +309,23 @@ ZTEST_F(u_connect_client_port, test_rx_ringbuf_full)
 
 ZTEST_F(u_connect_client_port, test_tx_fifo_full)
 {
-    int32_t rc = uPortUartWrite(fixture->client.uartHandle,
-                                &fixture->testData[0], EMUL_UART_TX_FIFO_SIZE + 8);
-    zassert_equal(rc, EMUL_UART_TX_FIFO_SIZE, "write() returned: %d", rc);
+    // More than the hardware FIFO holds: the port queues the rest in its TX
+    // ring and the ISR sends it once the FIFO has room again.
+    const size_t length = EMUL_UART_TX_FIFO_SIZE + 8;
+    int32_t rc = uPortUartWrite(fixture->client.uartHandle, &fixture->testData[0], length);
+    zassert_equal(rc, (int32_t)length, "write() returned: %d", rc);
 
-    rc = uart_emul_get_tx_data(fixture->pDev, &fixture->rxBuffer[0], EMUL_UART_TX_FIFO_SIZE + 8);
-    zassert_equal(rc, EMUL_UART_TX_FIFO_SIZE, "uart_emul_get_tx_data() returned: %d", rc);
-    zassert_mem_equal__(&fixture->rxBuffer, &fixture->testData, U_RINGBUFFER_SIZE);
+    size_t received = 0;
+    for (int i = 0; (i < 100) && (received < length); i++) {
+        k_sleep(K_MSEC(1));
+        received += uart_emul_get_tx_data(fixture->pDev, &fixture->rxBuffer[received],
+                                          length - received);
+        // uart_emul does not raise TX ready when FIFO space frees up, as
+        // real hardware would, so kick it to let the ISR send the rest.
+        uart_irq_tx_enable(fixture->pDev);
+    }
+    zassert_equal(received, length, "received %zu bytes", received);
+    zassert_mem_equal__(&fixture->rxBuffer, &fixture->testData, length);
 }
 
 ZTEST_F(u_connect_client_port, test_invalid_arguments)
