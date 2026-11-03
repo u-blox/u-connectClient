@@ -1,4 +1,4 @@
-/* Merged from NORA-W36X, NORA-B26X by ucx_api/merge_api.py; do not edit. */
+/* Merged from NORA-W36X, NORA-B26X, NORA-B26X-THREAD by ucx_api/merge_api.py; do not edit. */
 /*
 * This file was automatically generated using csnake v0.3.5.
 *
@@ -652,6 +652,61 @@ static int32_t parseUEDGI(uCxHandle_t * puCxHandle, char * pParams, size_t param
     return ret;
 }
 
+static int32_t parseUETHU(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t device_role;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &device_role, U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UETHU) {
+        puCxHandle->callbacks.UETHU(puCxHandle, device_role);
+    }
+    return ret;
+}
+
+static int32_t parseUETHD(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UETHD) {
+        puCxHandle->callbacks.UETHD(puCxHandle);
+    }
+    return ret;
+}
+
+static int32_t parseUETHRC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t device_role;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &device_role, U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UETHRC) {
+        puCxHandle->callbacks.UETHRC(puCxHandle, device_role);
+    }
+    return ret;
+}
+
+static int32_t parseUETHSS(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t service_id;
+    int32_t srp_state;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "dd", &service_id, &srp_state, U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UETHSS) {
+        puCxHandle->callbacks.UETHSS(puCxHandle, service_id, srp_state);
+    }
+    return ret;
+}
+
+static int32_t parseUETHJ(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t joiner_result;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &joiner_result, U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UETHJ) {
+        puCxHandle->callbacks.UETHJ(puCxHandle, joiner_result);
+    }
+    return ret;
+}
+
 /* ------------------------------------------------------------
  * PUBLIC FUNCTIONS
  * ---------------------------------------------------------- */
@@ -818,6 +873,21 @@ int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pPar
     }
     if (strcmp(pUrcName, "+UEBTCSS") == 0) {
         return parseUEBTCSS(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UETHU") == 0) {
+        return parseUETHU(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UETHD") == 0) {
+        return parseUETHD(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UETHRC") == 0) {
+        return parseUETHRC(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UETHSS") == 0) {
+        return parseUETHSS(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UETHJ") == 0) {
+        return parseUETHJ(puCxHandle, pParams, paramsLength);
     }
     return -1;
 }

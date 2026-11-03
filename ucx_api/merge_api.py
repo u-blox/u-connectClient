@@ -11,7 +11,11 @@ The merge works on top-level C items (functions, prototypes, typedefs, preproces
 - an enum both have must have the same values, one may only add members;
 - a struct both have (uUrcCallbacks) gets the union of its members;
 - the URC dispatch function (uCxUrcParse) gets the union of its branches.
-Anything else is a conflict and stops the merge.aeffs
+Anything else is a conflict and stops the merge.
+
+An extra module (--extra, NORA-B26X-THREAD by default) may come from a newer API version
+or generator ahead of the others: it only adds what the base modules lack (Thread commands,
+URCs and types), and an item that differs keeps the base modules' version.
 
 Run it after updating a generated folder:
     python ucx_api/merge_api.py           # writes ucx_api/generated/MERGED
@@ -25,6 +29,7 @@ from pathlib import Path
 
 GENERATED = Path(__file__).resolve().parent / "generated"
 DEFAULT_MODULES = ("NORA-W36X", "NORA-B26X")
+DEFAULT_EXTRA = ("NORA-B26X-THREAD",)
 OUTPUT = "MERGED"
 
 
@@ -155,16 +160,35 @@ def _resolve(key, a, b, filename):
     raise MergeError(f"{filename}: {kind} {name} differs between the modules")
 
 
-def merge_text(texts, filename):
-    """Merge one file's text from each module (in priority order)."""
+def _resolve_extra(key, a, b, filename):
+    """An extra module's item that differs: enums, uUrcCallbacks and the URC dispatch still gain
+    its new members, else a wins."""
+    kind, name = key[0]
+    code = _code(a)
+    if kind == "func" and _BRANCH.search(a):
+        return _merge_dispatch(name, a, b)
+    if kind == "type" and re.match(r"\s*typedef\s+struct", code):
+        return _merge_struct(name, a, b)
+    if kind == "type" and re.match(r"\s*typedef\s+enum", code):
+        try:
+            return _merge_enum(name, a, b)
+        except MergeError:
+            return a
+    return a
+
+
+def merge_text(texts, filename, extra=()):
+    """Merge one file's text from each module (in priority order); extra[i] marks an extra module."""
     out = split_items(texts[0])
-    for other in texts[1:]:
+    for n, other in enumerate(texts[1:], 1):
+        resolve = _resolve_extra if n < len(extra) and extra[n] else _resolve
         prev = None
         for key, text in split_items(other):
             keys = [k for k, _ in out]
             if key in keys:
                 i = keys.index(key)
-                out[i] = (key, _resolve(key, out[i][1], text, filename))
+                if _norm(out[i][1]) != _norm(text):
+                    out[i] = (key, resolve(key, out[i][1], text, filename))
             else:
                 # after the item it follows in its own file, else before the tail
                 at = keys.index(prev) + 1 if prev in keys else len(keys) - (keys[-1][0][0] == "tail")
@@ -173,31 +197,38 @@ def merge_text(texts, filename):
     return "".join(text for _, text in out)
 
 
-def merge(modules):
-    """{file name: merged text} for the given generated folders."""
+def merge(modules, extra=()):
+    """{file name: merged text} for the given generated folders, then the extra ones."""
     folders = [GENERATED / m for m in modules]
-    for f in folders:
+    extras = [GENERATED / m for m in extra]
+    for f in folders + extras:
         if not f.is_dir():
             raise MergeError(f"no generated API {f}")
     versions = {(f / "u_cx_version.h").read_text() for f in folders}
     if len(versions) != 1:
         raise MergeError("the modules have different API versions; update them all first")
-    names = sorted({p.name for f in folders for p in f.iterdir() if p.suffix in (".c", ".h")})
-    note = f"/* Merged from {', '.join(modules)} by ucx_api/merge_api.py; do not edit. */\n"
+    names = sorted({p.name for f in folders + extras for p in f.iterdir() if p.suffix in (".c", ".h")})
+    names = [n for n in names if n != "u_cx_version.h" or not extras]
+    note = f"/* Merged from {', '.join(list(modules) + list(extra))} by ucx_api/merge_api.py; do not edit. */\n"
     result = {}
     for name in names:
-        texts = [(f / name).read_text() for f in folders if (f / name).exists()]
-        result[name] = note + merge_text(texts, name)
+        have = [f for f in folders + extras if (f / name).exists()]
+        texts = [(f / name).read_text() for f in have]
+        result[name] = note + merge_text(texts, name, [f in extras for f in have])
+    if extras:
+        result["u_cx_version.h"] = note + (folders[0] / "u_cx_version.h").read_text()
     return result
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("modules", nargs="*", default=DEFAULT_MODULES, help="generated folders, first one wins on comments")
+    ap.add_argument("--extra", nargs="*", default=DEFAULT_EXTRA,
+                    help="modules ahead of the others that only add what is missing (default %(default)s)")
     ap.add_argument("--check", action="store_true", help=f"fail when generated/{OUTPUT} is not up to date")
     args = ap.parse_args(argv)
     try:
-        files = merge(args.modules)
+        files = merge(args.modules, args.extra)
     except MergeError as e:
         print(f"merge_api: {e}", file=sys.stderr)
         return 1
@@ -216,7 +247,7 @@ def main(argv=None):
         (out / name).unlink()
     for name, text in files.items():
         (out / name).write_text(text, newline="\n")
-    print(f"generated/{OUTPUT}: {len(files)} files from {', '.join(args.modules)}")
+    print(f"generated/{OUTPUT}: {len(files)} files from {', '.join(list(args.modules) + list(args.extra))}")
     return 0
 
 

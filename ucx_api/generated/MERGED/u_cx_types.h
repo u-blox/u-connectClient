@@ -1,4 +1,4 @@
-/* Merged from NORA-W36X, NORA-B26X by ucx_api/merge_api.py; do not edit. */
+/* Merged from NORA-W36X, NORA-B26X, NORA-B26X-THREAD by ucx_api/merge_api.py; do not edit. */
 /*
 * This file was automatically generated using csnake v0.3.5.
 *
@@ -597,6 +597,91 @@ typedef enum
 
 typedef enum
 {
+    U_THREAD_DEVICE_TYPE_ROUTER,               /**< Full Thread Device, router eligible. Can form a network and become leader. */
+    U_THREAD_DEVICE_TYPE_END_DEVICE = 1,       /**< Minimal End Device, receiver always on. */
+    U_THREAD_DEVICE_TYPE_SLEEPY_END_DEVICE = 2 /**< Sleepy End Device, polls its parent with the poll period. */
+} uThreadDeviceType_t;
+
+typedef enum
+{
+    U_THREAD_DEVICE_ROLE_DISABLED,     /**< Thread is disabled. */
+    U_THREAD_DEVICE_ROLE_DETACHED = 1, /**< Not attached to a Thread network. */
+    U_THREAD_DEVICE_ROLE_CHILD = 2,    /**< Attached as a child (end device). */
+    U_THREAD_DEVICE_ROLE_ROUTER = 3,   /**< Attached as a router. */
+    U_THREAD_DEVICE_ROLE_LEADER = 4    /**< Attached as the leader of the Thread partition. */
+} uThreadDeviceRole_t;
+
+typedef enum
+{
+    U_THREAD_ADDR_ORIGIN_THREAD,     /**< Thread internal address (link-local, mesh-local EID or RLOC/ALOC). */
+    U_THREAD_ADDR_ORIGIN_SLAAC = 1,  /**< Address created with SLAAC from an on-mesh prefix (for example from a Border Router). */
+    U_THREAD_ADDR_ORIGIN_DHCPV6 = 2, /**< Address assigned with DHCPv6. */
+    U_THREAD_ADDR_ORIGIN_MANUAL = 3  /**< Manually added address. */
+} uThreadAddrOrigin_t;
+
+typedef enum
+{
+    U_THREAD_NEIGHBOR_ROLE_CHILD,     /**< The neighbor is a child of this device. */
+    U_THREAD_NEIGHBOR_ROLE_ROUTER = 1 /**< The neighbor is a router. */
+} uThreadNeighborRole_t;
+
+typedef enum
+{
+    U_THREAD_COUNTER_ID_DETACHED_ROLE,                        /**< Number of times the device entered the detached role. */
+    U_THREAD_COUNTER_ID_CHILD_ROLE = 1,                       /**< Number of times the device entered the child role. */
+    U_THREAD_COUNTER_ID_ROUTER_ROLE = 2,                      /**< Number of times the device entered the router role. */
+    U_THREAD_COUNTER_ID_LEADER_ROLE = 3,                      /**< Number of times the device entered the leader role. */
+    U_THREAD_COUNTER_ID_ATTACH_ATTEMPTS = 4,                  /**< Number of attach attempts while detached. */
+    U_THREAD_COUNTER_ID_PARTITION_ID_CHANGES = 5,             /**< Number of partition ID changes. */
+    U_THREAD_COUNTER_ID_BETTER_PARTITION_ATTACH_ATTEMPTS = 6, /**< Number of attempts to attach to a better partition. */
+    U_THREAD_COUNTER_ID_PARENT_CHANGES = 7,                   /**< Number of parent changes. */
+    U_THREAD_COUNTER_ID_TX_TOTAL = 8,                         /**< Total number of MAC frame transmission requests. */
+    U_THREAD_COUNTER_ID_TX_UNICAST = 9,                       /**< Number of unicast MAC frame transmission requests. */
+    U_THREAD_COUNTER_ID_TX_BROADCAST = 10,                    /**< Number of broadcast MAC frame transmission requests. */
+    U_THREAD_COUNTER_ID_TX_ACK_REQUESTED = 11,                /**< Number of MAC frame transmission requests with acknowledgment requested. */
+    U_THREAD_COUNTER_ID_TX_ACKED = 12,                        /**< Number of MAC frame transmission requests that were acknowledged. */
+    U_THREAD_COUNTER_ID_TX_NO_ACK_REQUESTED = 13,             /**< Number of MAC frame transmission requests without acknowledgment requested. */
+    U_THREAD_COUNTER_ID_TX_DATA = 14,                         /**< Number of MAC data frame transmission requests. */
+    U_THREAD_COUNTER_ID_TX_DATA_POLL = 15,                    /**< Number of MAC data poll frame transmission requests. */
+    U_THREAD_COUNTER_ID_TX_BEACON = 16,                       /**< Number of MAC beacon frame transmission requests. */
+    U_THREAD_COUNTER_ID_TX_BEACON_REQUEST = 17,               /**< Number of MAC beacon request frame transmission requests. */
+    U_THREAD_COUNTER_ID_TX_OTHER = 18,                        /**< Number of other MAC frame transmission requests. */
+    U_THREAD_COUNTER_ID_TX_RETRY = 19,                        /**< Number of MAC retransmission attempts. */
+    U_THREAD_COUNTER_ID_TX_DIRECT_MAX_RETRY_EXPIRY = 20,      /**< Number of direct transmissions that reached the retry limit. */
+    U_THREAD_COUNTER_ID_TX_INDIRECT_MAX_RETRY_EXPIRY = 21,    /**< Number of indirect transmissions that reached the retry limit. */
+    U_THREAD_COUNTER_ID_TX_ERR_CCA = 22,                      /**< Number of CCA failures. */
+    U_THREAD_COUNTER_ID_TX_ERR_ABORT = 23,                    /**< Number of transmissions failed with an abort error. */
+    U_THREAD_COUNTER_ID_TX_ERR_BUSY_CHANNEL = 24,             /**< Number of transmissions failed because of a busy channel. */
+    U_THREAD_COUNTER_ID_RX_TOTAL = 25,                        /**< Total number of received frames. */
+    U_THREAD_COUNTER_ID_RX_UNICAST = 26,                      /**< Number of received unicast frames. */
+    U_THREAD_COUNTER_ID_RX_BROADCAST = 27,                    /**< Number of received broadcast frames. */
+    U_THREAD_COUNTER_ID_RX_DATA = 28,                         /**< Number of received MAC data frames. */
+    U_THREAD_COUNTER_ID_RX_DATA_POLL = 29,                    /**< Number of received MAC data poll frames. */
+    U_THREAD_COUNTER_ID_RX_BEACON = 30,                       /**< Number of received MAC beacon frames. */
+    U_THREAD_COUNTER_ID_RX_BEACON_REQUEST = 31,               /**< Number of received MAC beacon request frames. */
+    U_THREAD_COUNTER_ID_RX_OTHER = 32,                        /**< Number of other received frames. */
+    U_THREAD_COUNTER_ID_RX_ADDRESS_FILTERED = 33,             /**< Number of frames dropped by the MAC address filter. */
+    U_THREAD_COUNTER_ID_RX_DEST_ADDR_FILTERED = 34,           /**< Number of frames dropped by the destination address check. */
+    U_THREAD_COUNTER_ID_RX_DUPLICATED = 35,                   /**< Number of duplicated frames dropped. */
+    U_THREAD_COUNTER_ID_RX_ERR_NO_FRAME = 36,                 /**< Number of frames dropped because of missing or malformed content. */
+    U_THREAD_COUNTER_ID_RX_ERR_UNKNOWN_NEIGHBOR = 37,         /**< Number of frames dropped because of an unknown neighbor. */
+    U_THREAD_COUNTER_ID_RX_ERR_INVALID_SRC_ADDR = 38,         /**< Number of frames dropped because of an invalid source address. */
+    U_THREAD_COUNTER_ID_RX_ERR_SEC = 39,                      /**< Number of frames dropped because of a security error. */
+    U_THREAD_COUNTER_ID_RX_ERR_FCS = 40,                      /**< Number of frames dropped because of an invalid FCS. */
+    U_THREAD_COUNTER_ID_RX_ERR_OTHER = 41                     /**< Number of frames dropped because of other errors. */
+} uThreadCounterId_t;
+
+typedef enum
+{
+    U_THREAD_SRP_STATE_REGISTERING,    /**< Registration (or refresh) with the SRP server is ongoing. */
+    U_THREAD_SRP_STATE_REGISTERED = 1, /**< Registered with the SRP server. */
+    U_THREAD_SRP_STATE_REMOVING = 2,   /**< Removal from the SRP server is ongoing. */
+    U_THREAD_SRP_STATE_REMOVED = 3,    /**< Removed from the SRP server. */
+    U_THREAD_SRP_STATE_FAILED = 4      /**< The SRP server rejected the registration (for example name conflict). */
+} uThreadSrpState_t;
+
+typedef enum
+{
     U_BT_BOND_STATUS_BONDING_SUCCEEDED,                /**< Bonding procedure succeeded. */
     U_BT_BOND_STATUS_BONDING_FAILED_TIMEOUT = 1,       /**< Bonding procedure failed due to page timeout. */
     U_BT_BOND_STATUS_BONDING_FAILED_AUTH = 2,          /**< Bonding failed because of authentication or pairing failed. This could be due to incorrect
@@ -637,6 +722,15 @@ typedef enum
     U_DIAG_PING_RESPONSE_FALSE,   /**< Ping failed. */
     U_DIAG_PING_RESPONSE_TRUE = 1 /**< Ping succeeded. */
 } uDiagPingResponse_t;
+
+typedef enum
+{
+    U_THREAD_JOINER_RESULT_SUCCESS,       /**< Joined, the dataset is stored. Enable Thread with AT+UTHE to attach. */
+    U_THREAD_JOINER_RESULT_SECURITY = 1,  /**< The commissioner rejected the PSKd. */
+    U_THREAD_JOINER_RESULT_NOT_FOUND = 2, /**< No joinable network found. */
+    U_THREAD_JOINER_RESULT_TIMEOUT = 3,   /**< The commissioner did not respond. */
+    U_THREAD_JOINER_RESULT_FAILED = 4     /**< Joining failed for another reason. */
+} uThreadJoinerResult_t;
 
 /* ------------------------------------------------------------
  * CALLBACK TYPES
@@ -697,6 +791,11 @@ typedef void (*uUEMDD_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEDGPC_t)(struct uCxHandle *puCxHandle, int32_t transmitted_packets, int32_t received_packets, int32_t packet_loss_rate, int32_t avg_response_time);
 typedef void (*uUEDGP_t)(struct uCxHandle *puCxHandle, uDiagPingResponse_t ping_response, int32_t response_time);
 typedef void (*uUEDGI_t)(struct uCxHandle *puCxHandle, const char * iperf_output);
+typedef void (*uUETHU_t)(struct uCxHandle *puCxHandle, uThreadDeviceRole_t device_role);
+typedef void (*uUETHD_t)(struct uCxHandle *puCxHandle);
+typedef void (*uUETHRC_t)(struct uCxHandle *puCxHandle, uThreadDeviceRole_t device_role);
+typedef void (*uUETHSS_t)(struct uCxHandle *puCxHandle, int32_t service_id, uThreadSrpState_t srp_state);
+typedef void (*uUETHJ_t)(struct uCxHandle *puCxHandle, uThreadJoinerResult_t joiner_result);
 
 /* ------------------------------------------------------------
  * INTERNAL CALLBACK STRUCT
@@ -758,6 +857,11 @@ typedef struct
     uUEDGP_t UEDGP;
     uUEDGI_t UEDGI;
     uUEBTCSS_t UEBTCSS;
+    uUETHU_t UETHU;
+    uUETHD_t UETHD;
+    uUETHRC_t UETHRC;
+    uUETHSS_t UETHSS;
+    uUETHJ_t UETHJ;
 } uUrcCallbacks;
 #ifdef __cplusplus
 }

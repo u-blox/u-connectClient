@@ -1,4 +1,4 @@
-/* Merged from NORA-W36X, NORA-B26X by ucx_api/merge_api.py; do not edit. */
+/* Merged from NORA-W36X, NORA-B26X, NORA-B26X-THREAD by ucx_api/merge_api.py; do not edit. */
 /*
 * This file was automatically generated using csnake v0.3.5.
 *
