@@ -450,6 +450,8 @@ static void cmdBeginF(uCxAtClient_t *pClient, const char *pCmd, const char *pPar
 
 static int32_t cmdEnd(uCxAtClient_t *pClient)
 {
+    int32_t status;
+
     while (pClient->status == NO_STATUS) {
         handleRxData(pClient, pClient->pConfig->timeoutMs);
 
@@ -469,6 +471,9 @@ static int32_t cmdEnd(uCxAtClient_t *pClient)
 
     pClient->executingCmd = false;
 
+    // Take the status before releasing the mutex: another thread's cmdBeginF() may reset it to NO_STATUS
+    // (INT_MAX) the moment the mutex is free, which would then be returned here as the result
+    status = pClient->status;
     U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
 
 #if U_CX_USE_URC_QUEUE == 1
@@ -476,7 +481,7 @@ static int32_t cmdEnd(uCxAtClient_t *pClient)
     processUrcs(pClient);
 #endif
 
-    return pClient->status;
+    return status;
 }
 
 static inline int32_t writeAndLog(uCxAtClient_t *pClient, const void *pData, size_t dataLen)
