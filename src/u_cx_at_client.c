@@ -603,9 +603,10 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
             }
             break;
             case 'l': {
-                // Integer list
+                // Integer list; the generated API passes the length as int32_t, and va_arg must read exactly
+                // that type (reading a size_t left the upper half undefined on 64-bit MSVC: huge len, crash)
                 int16_t *pValues = va_arg(args, int16_t *);
-                size_t len = va_arg(args, size_t);
+                size_t len = (size_t)va_arg(args, int32_t);
 
                 if (len == 0) {
                     writeAndLog(pClient, "[]", 2);
@@ -636,9 +637,9 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
             }
             break;
             case '$': {
-                // Binary string (uses a length arg instead)
+                // Binary string (uses a length arg instead, int32_t in the generated API: see 'l')
                 char *pStr = va_arg(args, char *);
-                size_t strLen = va_arg(args, size_t);
+                size_t strLen = (size_t)va_arg(args, int32_t);
                 size_t len = uCxAtUtilWriteEscString(pStr, strLen, buf, sizeof(buf));
                 if (len > 0) {
                     writeAndLog(pClient, buf, len);
