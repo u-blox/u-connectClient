@@ -264,8 +264,11 @@ static int32_t parseUESPSDA(uCxHandle_t * puCxHandle, char * pParams, size_t par
 /* ------------------------------------------------------------
  * PUBLIC FUNCTIONS
  * ---------------------------------------------------------- */
-int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pParams, size_t paramsLength)
+int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pParams, size_t paramsLength,
+                    uint8_t *pBinaryData, size_t binaryDataLen)
 {
+    (void)pBinaryData;
+    (void)binaryDataLen;
     if (strcmp(pUrcName, "+STARTUP") == 0) {
         return parseSTARTUP(puCxHandle, pParams, paramsLength);
     }
