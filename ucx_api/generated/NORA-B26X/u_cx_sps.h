@@ -163,6 +163,29 @@ void uCxSpsRegisterConnect(uCxHandle_t * puCxHandle, uUESPSC_t callback);
 void uCxSpsRegisterDisconnect(uCxHandle_t * puCxHandle, uUESPSDC_t callback);
 
 /**
+ * Register DataString event callback
+ * 
+ * Unsolicited event containing SPS data as a string received from remote peer.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSpsRegisterDataString(uCxHandle_t * puCxHandle, uUESPSDS_t callback);
+
+/**
+ * Register DataBinary event callback
+ * 
+ * Unsolicited event containing SPS data in binary format.
+ * 
+ * The callback receives the binary payload in pBinaryData and binaryDataLen. pBinaryData is only valid during the
+ * callback.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSpsRegisterDataBinary(uCxHandle_t * puCxHandle, uUESPSDB_t callback);
+
+/**
  * Register DataAvailable event callback
  * 
  * Unsolicited event containing the number of received bytes to read.

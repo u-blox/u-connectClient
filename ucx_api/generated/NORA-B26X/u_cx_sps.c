@@ -121,6 +121,16 @@ void uCxSpsRegisterDisconnect(uCxHandle_t * puCxHandle, uUESPSDC_t callback)
     puCxHandle->callbacks.UESPSDC = callback;
 }
 
+void uCxSpsRegisterDataString(uCxHandle_t * puCxHandle, uUESPSDS_t callback)
+{
+    puCxHandle->callbacks.UESPSDS = callback;
+}
+
+void uCxSpsRegisterDataBinary(uCxHandle_t * puCxHandle, uUESPSDB_t callback)
+{
+    puCxHandle->callbacks.UESPSDB = callback;
+}
+
 void uCxSpsRegisterDataAvailable(uCxHandle_t * puCxHandle, uUESPSDA_t callback)
 {
     puCxHandle->callbacks.UESPSDA = callback;

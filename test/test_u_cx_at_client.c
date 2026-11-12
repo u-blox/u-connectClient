@@ -28,6 +28,8 @@
 #include "u_cx_at_client.h"
 #include "u_cx.h"
 #include "u_cx_urc.h"
+#include "u_cx_socket.h"
+#include "u_cx_sps.h"
 
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
@@ -872,9 +874,9 @@ void test_uCxApi_withBinaryUrc_expectPayloadInApplicationCallback(void)
     };
     const uint8_t binaryData[] = {BIN_HDR(6), 0xa5, 0x01, 0x0d, 0x0a, 0x00, 0xff};
     uCxInit(&gClient, &gApiHandle);
-    gApiHandle.callbacks.UESODB = binaryApiCallback;
-    gApiHandle.callbacks.UESODBF = binaryFromApiCallback;
-    gApiHandle.callbacks.UESPSDB = binaryApiCallback;
+    uCxSocketRegisterDataBinary(&gApiHandle, binaryApiCallback);
+    uCxSocketRegisterDataBinaryFrom(&gApiHandle, binaryFromApiCallback);
+    uCxSpsRegisterDataBinary(&gApiHandle, binaryApiCallback);
     gApiCallbackCount = 0;
 
     for (size_t index = 0; index < sizeof(headers) / sizeof(headers[0]); index++) {
@@ -897,7 +899,7 @@ void test_uCxApi_withMalformedBinaryUrc_expectNoApplicationCallback(void)
         0xa5, 0x01, 0x0d, 0x0a, 0x00, 0xff
     };
     uCxInit(&gClient, &gApiHandle);
-    gApiHandle.callbacks.UESODB = binaryApiCallback;
+    uCxSocketRegisterDataBinary(&gApiHandle, binaryApiCallback);
     gApiCallbackCount = 0;
     gPRxDataPtr = rxData;
     gRxDataLen = sizeof(rxData);

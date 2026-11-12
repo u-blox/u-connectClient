@@ -460,6 +460,52 @@ void uCxSocketRegisterConnect(uCxHandle_t * puCxHandle, uUESOC_t callback);
 void uCxSocketRegisterDataAvailable(uCxHandle_t * puCxHandle, uUESODA_t callback);
 
 /**
+ * Register DataString event callback
+ * 
+ * Incoming on TCP socket data represented as a string.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSocketRegisterDataString(uCxHandle_t * puCxHandle, uUESODS_t callback);
+
+/**
+ * Register DataStringFrom event callback
+ * 
+ * Incoming on UDP socket data represented as a string.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSocketRegisterDataStringFrom(uCxHandle_t * puCxHandle, uUESODSF_t callback);
+
+/**
+ * Register DataBinary event callback
+ * 
+ * Incoming on TCP socket data represented as binary data.
+ * 
+ * The callback receives the binary payload in pBinaryData and binaryDataLen. pBinaryData is only valid during the
+ * callback.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSocketRegisterDataBinary(uCxHandle_t * puCxHandle, uUESODB_t callback);
+
+/**
+ * Register DataBinaryFrom event callback
+ * 
+ * Incoming on UDP socket data represented as binary data.
+ * 
+ * The callback receives the binary payload in pBinaryData and binaryDataLen. pBinaryData is only valid during the
+ * callback.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSocketRegisterDataBinaryFrom(uCxHandle_t * puCxHandle, uUESODBF_t callback);
+
+/**
  * Register Closed event callback
  * 
  * Event is sent out either when a socket was closed (by the remote or timed out) or when a connection to a remote peer has
