@@ -442,6 +442,10 @@ static void cmdBeginF(uCxAtClient_t *pClient, const char *pCmd, const char *pPar
     U_CX_AT_PORT_ASSERT(!pClient->executingCmd);
 
     pClient->pRspParams = NULL;
+    // A simple command expects no response line: the previous command's prefix would match lines meant as URCs
+    // and may point into code that is gone (a plug-in that was unloaded)
+    pClient->pExpectedRsp = NULL;
+    pClient->pExpectedRspLen = 0;
     pClient->executingCmd = true;
     pClient->status = NO_STATUS;
     pClient->cmdStartTime = U_CX_PORT_GET_TIME_MS();
