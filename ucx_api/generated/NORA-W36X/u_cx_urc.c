@@ -225,13 +225,13 @@ static int32_t parseUESPSDS(uCxHandle_t * puCxHandle, char * pParams, size_t par
     return ret;
 }
 
-static int32_t parseUESPSDB(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+static int32_t parseUESPSDB(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength, const uint8_t * pBinaryData, size_t binaryDataLen)
 {
     (void)paramsLength;
     int32_t conn_handle;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &conn_handle, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESPSDB) {
-        puCxHandle->callbacks.UESPSDB(puCxHandle, conn_handle);
+        puCxHandle->callbacks.UESPSDB(puCxHandle, conn_handle, pBinaryData, binaryDataLen);
     }
     return ret;
 }
@@ -437,18 +437,18 @@ static int32_t parseUESODSF(uCxHandle_t * puCxHandle, char * pParams, size_t par
     return ret;
 }
 
-static int32_t parseUESODB(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+static int32_t parseUESODB(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength, const uint8_t * pBinaryData, size_t binaryDataLen)
 {
     (void)paramsLength;
     int32_t socket_handle;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &socket_handle, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESODB) {
-        puCxHandle->callbacks.UESODB(puCxHandle, socket_handle);
+        puCxHandle->callbacks.UESODB(puCxHandle, socket_handle, pBinaryData, binaryDataLen);
     }
     return ret;
 }
 
-static int32_t parseUESODBF(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+static int32_t parseUESODBF(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength, const uint8_t * pBinaryData, size_t binaryDataLen)
 {
     (void)paramsLength;
     int32_t socket_handle;
@@ -456,7 +456,7 @@ static int32_t parseUESODBF(uCxHandle_t * puCxHandle, char * pParams, size_t par
     int32_t remote_port;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "did", &socket_handle, &remote_ip, &remote_port, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESODBF) {
-        puCxHandle->callbacks.UESODBF(puCxHandle, socket_handle, &remote_ip, remote_port);
+        puCxHandle->callbacks.UESODBF(puCxHandle, socket_handle, &remote_ip, remote_port, pBinaryData, binaryDataLen);
     }
     return ret;
 }
@@ -641,7 +641,7 @@ static int32_t parseUEDGI(uCxHandle_t * puCxHandle, char * pParams, size_t param
 /* ------------------------------------------------------------
  * PUBLIC FUNCTIONS
  * ---------------------------------------------------------- */
-int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pParams, size_t paramsLength)
+int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pParams, size_t paramsLength, const uint8_t * pBinaryData, size_t binaryDataLen)
 {
     if (strcmp(pUrcName, "+STARTUP") == 0) {
         return parseSTARTUP(puCxHandle, pParams, paramsLength);
@@ -695,7 +695,7 @@ int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pPar
         return parseUESPSDS(puCxHandle, pParams, paramsLength);
     }
     if (strcmp(pUrcName, "+UESPSDB") == 0) {
-        return parseUESPSDB(puCxHandle, pParams, paramsLength);
+        return parseUESPSDB(puCxHandle, pParams, paramsLength, pBinaryData, binaryDataLen);
     }
     if (strcmp(pUrcName, "+UESPSDA") == 0) {
         return parseUESPSDA(puCxHandle, pParams, paramsLength);
@@ -752,10 +752,10 @@ int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pPar
         return parseUESODSF(puCxHandle, pParams, paramsLength);
     }
     if (strcmp(pUrcName, "+UESODB") == 0) {
-        return parseUESODB(puCxHandle, pParams, paramsLength);
+        return parseUESODB(puCxHandle, pParams, paramsLength, pBinaryData, binaryDataLen);
     }
     if (strcmp(pUrcName, "+UESODBF") == 0) {
-        return parseUESODBF(puCxHandle, pParams, paramsLength);
+        return parseUESODBF(puCxHandle, pParams, paramsLength, pBinaryData, binaryDataLen);
     }
     if (strcmp(pUrcName, "+UESOCL") == 0) {
         return parseUESOCL(puCxHandle, pParams, paramsLength);

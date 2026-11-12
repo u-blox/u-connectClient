@@ -17,6 +17,7 @@
 extern "C" {
 #endif /* __cplusplus */
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -626,7 +627,7 @@ typedef void (*uUEBTGIC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, in
 typedef void (*uUESPSC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle);
 typedef void (*uUESPSDC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle);
 typedef void (*uUESPSDS_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, uByteArray_t *string_data);
-typedef void (*uUESPSDB_t)(struct uCxHandle *puCxHandle, int32_t conn_handle);
+typedef void (*uUESPSDB_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, const uint8_t *pBinaryData, size_t binaryDataLen);
 typedef void (*uUESPSDA_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t number_bytes);
 typedef void (*uUEWLU_t)(struct uCxHandle *puCxHandle, int32_t wlan_handle, uMacAddress_t *bssid, int32_t channel);
 typedef void (*uUEWLD_t)(struct uCxHandle *puCxHandle, int32_t wlan_handle, int32_t reason);
@@ -645,8 +646,8 @@ typedef void (*uUESOC_t)(struct uCxHandle *puCxHandle, int32_t socket_handle);
 typedef void (*uUESODA_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, int32_t number_bytes);
 typedef void (*uUESODS_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uByteArray_t *string_data);
 typedef void (*uUESODSF_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uSockIpAddress_t *remote_ip, int32_t remote_port, uByteArray_t *string_data);
-typedef void (*uUESODB_t)(struct uCxHandle *puCxHandle, int32_t socket_handle);
-typedef void (*uUESODBF_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uSockIpAddress_t *remote_ip, int32_t remote_port);
+typedef void (*uUESODB_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, const uint8_t *pBinaryData, size_t binaryDataLen);
+typedef void (*uUESODBF_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uSockIpAddress_t *remote_ip, int32_t remote_port, const uint8_t *pBinaryData, size_t binaryDataLen);
 typedef void (*uUESOCL_t)(struct uCxHandle *puCxHandle, int32_t socket_handle);
 typedef void (*uUESOIC_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uSockIpAddress_t *remote_ip, int32_t listening_socket_handle);
 typedef void (*uUEMQC_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id);

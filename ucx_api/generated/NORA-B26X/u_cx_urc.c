@@ -238,13 +238,13 @@ static int32_t parseUESPSDS(uCxHandle_t * puCxHandle, char * pParams, size_t par
     return ret;
 }
 
-static int32_t parseUESPSDB(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+static int32_t parseUESPSDB(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength, const uint8_t * pBinaryData, size_t binaryDataLen)
 {
     (void)paramsLength;
     int32_t conn_handle;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &conn_handle, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESPSDB) {
-        puCxHandle->callbacks.UESPSDB(puCxHandle, conn_handle);
+        puCxHandle->callbacks.UESPSDB(puCxHandle, conn_handle, pBinaryData, binaryDataLen);
     }
     return ret;
 }
@@ -264,7 +264,7 @@ static int32_t parseUESPSDA(uCxHandle_t * puCxHandle, char * pParams, size_t par
 /* ------------------------------------------------------------
  * PUBLIC FUNCTIONS
  * ---------------------------------------------------------- */
-int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pParams, size_t paramsLength)
+int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pParams, size_t paramsLength, const uint8_t * pBinaryData, size_t binaryDataLen)
 {
     if (strcmp(pUrcName, "+STARTUP") == 0) {
         return parseSTARTUP(puCxHandle, pParams, paramsLength);
@@ -321,7 +321,7 @@ int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pPar
         return parseUESPSDS(puCxHandle, pParams, paramsLength);
     }
     if (strcmp(pUrcName, "+UESPSDB") == 0) {
-        return parseUESPSDB(puCxHandle, pParams, paramsLength);
+        return parseUESPSDB(puCxHandle, pParams, paramsLength, pBinaryData, binaryDataLen);
     }
     if (strcmp(pUrcName, "+UESPSDA") == 0) {
         return parseUESPSDA(puCxHandle, pParams, paramsLength);
