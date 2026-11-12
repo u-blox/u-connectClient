@@ -855,6 +855,25 @@ void test_uCxAtClientCmd_withInterleavedUrc_expectResponseAndCallback(void)
     TEST_ASSERT_EQUAL(1, gUrcCallbackExpectations.callbackCount);
 }
 
+void test_uCxAtClientExecSimpleCmd_afterRspCmd_expectUrcWithSamePrefixAsUrc(void)
+{
+    char rxData1[] = { "+MYURC:1\r\nOK\r\n" };
+    char rxData2[] = { TEST_URC "\r\nOK\r\n" };
+
+    setUrcCallbackExpectations(&gClient, CONTEXT_VALUE, NULL, 0);
+    gPRxDataPtr = (uint8_t *)&rxData1[0];
+    gRxDataLen = strlen(rxData1);
+    uCxAtClientCmdBeginF(&gClient, "", "", U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("1", uCxAtClientCmdGetRspParamLine(&gClient, "+MYURC:", NULL, NULL));
+    TEST_ASSERT_EQUAL(0, uCxAtClientCmdEnd(&gClient));
+
+    // The response prefix of the previous command must not catch this URC
+    gPRxDataPtr = (uint8_t *)&rxData2[0];
+    gRxDataLen = strlen(rxData2);
+    TEST_ASSERT_EQUAL(0, uCxAtClientExecSimpleCmd(&gClient, "AT"));
+    TEST_ASSERT_EQUAL(1, gUrcCallbackExpectations.callbackCount);
+}
+
 void test_uCxAtClientHandleRx_withReadError_expectIoError(void)
 {
     gRxIoErrorCode = -1234;
