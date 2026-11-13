@@ -778,6 +778,8 @@ char *uCxAtClientCmdGetRspParamLine(uCxAtClient_t *pClient, const char *pExpecte
         // Check for timeout
         int32_t now = U_CX_PORT_GET_TIME_MS();
         if ((now - pClient->cmdStartTime) > pClient->cmdTimeout) {
+            // The command has its result: uCxAtClientCmdEnd() neither waits nor logs the timeout a second time
+            pClient->status = U_CX_ERROR_CMD_TIMEOUT;
             U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "Command timeout");
             return NULL;
         }
@@ -794,7 +796,10 @@ int32_t uCxAtClientCmdGetRspParamsF(uCxAtClient_t *pClient, const char *pExpecte
     char *pRspParams = uCxAtClientCmdGetRspParamLine(pClient, pExpectedRsp,
                                                      pBinaryBuf, pBinaryBufLength);
     if (pRspParams == NULL) {
-        return U_CX_ERROR_CMD_TIMEOUT;
+        // No response line: when the module answered with an error status instead (ERROR, ERROR:<code>),
+        // that status is the result; only a command that got no answer timed out
+        int32_t status = pClient->status;
+        return (status != NO_STATUS && status < 0) ? status : U_CX_ERROR_CMD_TIMEOUT;
     }
     va_start(args, pParamFmt);
     int32_t ret = uCxAtUtilParseParamsVaList(pRspParams, pParamFmt, args);
