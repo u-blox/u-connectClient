@@ -17,6 +17,7 @@
 extern "C" {
 #endif /* __cplusplus */
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -313,7 +314,7 @@ typedef void (*uUEBTGIC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, in
 typedef void (*uUESPSC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle);
 typedef void (*uUESPSDC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle);
 typedef void (*uUESPSDS_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, uByteArray_t *string_data);
-typedef void (*uUESPSDB_t)(struct uCxHandle *puCxHandle, int32_t conn_handle);
+typedef void (*uUESPSDB_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, const uint8_t *pBinaryData, size_t binaryDataLen);
 typedef void (*uUESPSDA_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t number_bytes);
 
 /* ------------------------------------------------------------

@@ -23,7 +23,7 @@ extern "C" {
  * PUBLIC FUNCTIONS
  * ---------------------------------------------------------- */
 
-int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pParams, size_t paramsLength);
+int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pParams, size_t paramsLength, const uint8_t * pBinaryData, size_t binaryDataLen);
 
 #ifdef __cplusplus
 }

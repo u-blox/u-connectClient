@@ -323,6 +323,26 @@ void uCxSocketRegisterDataAvailable(uCxHandle_t * puCxHandle, uUESODA_t callback
     puCxHandle->callbacks.UESODA = callback;
 }
 
+void uCxSocketRegisterDataString(uCxHandle_t * puCxHandle, uUESODS_t callback)
+{
+    puCxHandle->callbacks.UESODS = callback;
+}
+
+void uCxSocketRegisterDataStringFrom(uCxHandle_t * puCxHandle, uUESODSF_t callback)
+{
+    puCxHandle->callbacks.UESODSF = callback;
+}
+
+void uCxSocketRegisterDataBinary(uCxHandle_t * puCxHandle, uUESODB_t callback)
+{
+    puCxHandle->callbacks.UESODB = callback;
+}
+
+void uCxSocketRegisterDataBinaryFrom(uCxHandle_t * puCxHandle, uUESODBF_t callback)
+{
+    puCxHandle->callbacks.UESODBF = callback;
+}
+
 void uCxSocketRegisterClosed(uCxHandle_t * puCxHandle, uUESOCL_t callback)
 {
     puCxHandle->callbacks.UESOCL = callback;

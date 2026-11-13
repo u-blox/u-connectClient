@@ -27,11 +27,15 @@
     - -:test/windows/**
   :source:
     - src/**
+    - ucx_api
+    - ucx_api/generated/NORA-W36X
   :include:
     - src/**
     - inc/**
     - ports/**
     - -:ports/extra/**
+    - ucx_api
+    - ucx_api/generated/NORA-W36X
   :support:
     - test/support
   :libraries: []

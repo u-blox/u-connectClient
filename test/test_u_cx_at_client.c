@@ -26,6 +26,10 @@
 #include "u_cx_at_params.h"
 #include "u_cx_at_urc_queue.h"
 #include "u_cx_at_client.h"
+#include "u_cx.h"
+#include "u_cx_urc.h"
+#include "u_cx_socket.h"
+#include "u_cx_sps.h"
 
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
@@ -71,6 +75,8 @@ static uCxAtClientConfig_t gClientConfig = {
 
 static uCxAtClient_t gClient;
 static int32_t *gPTickSequence;
+static uCxHandle_t gApiHandle;
+static int32_t gApiCallbackCount;
 
 static struct {
     uCxAtClient_t *pClient;
@@ -83,6 +89,26 @@ static struct {
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
  * -------------------------------------------------------------- */
+
+static void binaryApiCallback(uCxHandle_t *pHandle, int32_t handle,
+                              const uint8_t *pBinaryData, size_t binaryDataLen)
+{
+    const uint8_t expected[] = {0xa5, 0x01, 0x0d, 0x0a, 0x00, 0xff};
+    TEST_ASSERT_EQUAL_PTR(&gApiHandle, pHandle);
+    TEST_ASSERT_EQUAL(7, handle);
+    TEST_ASSERT_EQUAL(sizeof(expected), binaryDataLen);
+    TEST_ASSERT_EQUAL_MEMORY(expected, pBinaryData, sizeof(expected));
+    gApiCallbackCount++;
+}
+
+static void binaryFromApiCallback(uCxHandle_t *pHandle, int32_t handle,
+                                  uSockIpAddress_t *pRemoteIp, int32_t remotePort,
+                                  const uint8_t *pBinaryData, size_t binaryDataLen)
+{
+    TEST_ASSERT_NOT_NULL(pRemoteIp);
+    TEST_ASSERT_EQUAL(1234, remotePort);
+    binaryApiCallback(pHandle, handle, pBinaryData, binaryDataLen);
+}
 
 static void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine,
                         size_t lineLength, uint8_t *pBinaryData,
@@ -839,6 +865,47 @@ void test_uCxAtClientHandleRx_withOversizedBinUrc_expectDiscardAndRecovery(void)
     gRxDataLen = strlen(nextUrc);
     uCxAtClientHandleRx(&gClient);
     TEST_ASSERT_EQUAL(1, gUrcCallbackExpectations.callbackCount);
+}
+
+void test_uCxApi_withBinaryUrc_expectPayloadInApplicationCallback(void)
+{
+    const char *headers[] = {
+        "\r\n+UESODB:7", "\r\n+UESODBF:7,192.0.2.1,1234", "\r\n+UESPSDB:7"
+    };
+    const uint8_t binaryData[] = {BIN_HDR(6), 0xa5, 0x01, 0x0d, 0x0a, 0x00, 0xff};
+    uCxInit(&gClient, &gApiHandle);
+    uCxSocketRegisterDataBinary(&gApiHandle, binaryApiCallback);
+    uCxSocketRegisterDataBinaryFrom(&gApiHandle, binaryFromApiCallback);
+    uCxSpsRegisterDataBinary(&gApiHandle, binaryApiCallback);
+    gApiCallbackCount = 0;
+
+    for (size_t index = 0; index < sizeof(headers) / sizeof(headers[0]); index++) {
+        uint8_t rxData[128];
+        size_t headerLength = strlen(headers[index]);
+        memcpy(rxData, headers[index], headerLength);
+        memcpy(rxData + headerLength, binaryData, sizeof(binaryData));
+        gPRxDataPtr = rxData;
+        gRxDataLen = (int32_t)(headerLength + sizeof(binaryData));
+        uCxAtClientHandleRx(&gClient);
+        TEST_ASSERT_EQUAL(index + 1, gApiCallbackCount);
+        TEST_ASSERT_EQUAL(0, gRxDataLen);
+    }
+}
+
+void test_uCxApi_withMalformedBinaryUrc_expectNoApplicationCallback(void)
+{
+    uint8_t rxData[] = {
+        '+', 'U', 'E', 'S', 'O', 'D', 'B', ':', 'x', BIN_HDR(6),
+        0xa5, 0x01, 0x0d, 0x0a, 0x00, 0xff
+    };
+    uCxInit(&gClient, &gApiHandle);
+    uCxSocketRegisterDataBinary(&gApiHandle, binaryApiCallback);
+    gApiCallbackCount = 0;
+    gPRxDataPtr = rxData;
+    gRxDataLen = sizeof(rxData);
+    uCxAtClientHandleRx(&gClient);
+    TEST_ASSERT_EQUAL(0, gApiCallbackCount);
+    TEST_ASSERT_EQUAL(0, gRxDataLen);
 }
 
 void test_uCxAtClientCmd_withInterleavedUrc_expectResponseAndCallback(void)
